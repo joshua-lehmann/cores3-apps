@@ -1,0 +1,36 @@
+{
+    "name": "Simon Sound Dev Container",
+    "containerEnv": {
+        // Keep the build tree off the bind mount: file sharing with the host is
+        // slow, and the tree is wiped when the container is rebuilt.
+        "CARGO_TARGET_DIR": "/tmp/cargo-target"
+    },
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+        // Files you create in the container belong to you on the host.
+        "--userns=keep-id",
+        // Lets the container reach services on the host's localhost.
+        "--net=host"
+    ],
+    "customizations": {
+        "vscode": {
+            // Editor settings live in .vscode/settings.json so they apply in
+            // and outside the container.
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "tamasfe.even-better-toml",
+                "fill-labs.dependi",
+                "vadimcn.vscode-lldb",
+                "usernamehw.errorlens",
+                "microhobby.taskrunnercodeplus",
+                "DavidAnson.vscode-markdownlint",
+                "MS-vsliveshare.vsliveshare",
+                "GitHub.vscode-pull-request-github",
+                "kdl-org.kdl"
+            ]
+        }
+    },
+    "postCreateCommand": "bash .devcontainer/post_create.sh"
+}

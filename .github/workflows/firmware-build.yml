@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  host-tests:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read the toolchain version from Cargo.toml
+        run: echo "RUST_VERSION=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_ENV"
+
+      - name: Install host Rust toolchain
+        run: rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+
+      - name: Lint the core crate and its tests
+        run: |
+          host_target="$(rustc +"$RUST_VERSION" -vV | sed -n 's/^host: //p')"
+          cargo +"$RUST_VERSION" clippy -p simon-sound-core --all-targets --target "$host_target" -- -D warnings
+
+      - name: Run host tests
+        run: RUSTFLAGS="-D warnings" ./scripts/test.sh
+
+  firmware:
+    name: Firmware lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read the toolchain version from Cargo.toml
+        run: echo "RUST_VERSION=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_ENV"
+
+      - name: Install Xtensa Rust toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7
+        with:
+          default: true
+          buildtargets: esp32s3
+          # The Xtensa toolchain adds a fourth version component.
+          version: ${{ env.RUST_VERSION }}.0
+          ldproxy: false
+
+      - name: Cache Cargo registry and build tree
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy (library and every application binary)
+        run: cargo clippy --locked --release -- -D warnings
+
+      - name: Build every application binary
+        run: cargo build --locked --release
