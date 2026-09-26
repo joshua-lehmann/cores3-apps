@@ -8,6 +8,7 @@ mod waveform;
 
 use embassy_time::{Duration, Instant};
 use embedded_graphics::primitives::Rectangle;
+use log::warn;
 use simon_sound::{
     capabilities::{
         audio::{self, MicBlockInfo, Microphone},
@@ -15,7 +16,6 @@ use simon_sound::{
     },
     ui::{Canvas, gui, theme},
 };
-use log::warn;
 use static_cell::ConstStaticCell;
 
 use crate::{layout, screens::Screen};

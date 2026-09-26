@@ -10,6 +10,7 @@ use core::fmt::{self, Write as _};
 use arrayvec::ArrayString;
 use embassy_time::{Duration, Instant};
 use embedded_graphics::primitives::Rectangle;
+use serde::{Deserialize, Serialize};
 use simon_sound::{
     capabilities::{
         display::Surface,
@@ -21,7 +22,6 @@ use simon_sound::{
         gui, theme,
     },
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{layout, screens::Screen};
 

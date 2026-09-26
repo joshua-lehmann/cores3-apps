@@ -16,8 +16,8 @@
 
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
-use simon_sound_core::light::{self, Channels, DATA_BLOCK_LEN, PROXIMITY_MAX};
 use log::warn;
+use simon_sound_core::light::{self, Channels, DATA_BLOCK_LEN, PROXIMITY_MAX};
 
 use crate::{
     board::{i2c::SystemI2cBus, registers::AsyncRegisters},
