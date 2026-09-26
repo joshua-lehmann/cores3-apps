@@ -588,7 +588,7 @@ if let Some(info) = microphone.next_block(&mut block) {
 }
 ```
 
-**Speaker.** The speaker queue holds about 64 ms of audio. Add a little
+**Speaker.** The speaker queue holds about 256 ms of audio. Add a little
 audio to the queue on every loop iteration. When the queue is empty, the
 board plays silence. `SineWave` makes tones.
 
@@ -760,9 +760,9 @@ or three players, and a four-player game starts automatically. Everyone
 watches the sequence once per round, then takes turns repeating it. A mistake
 eliminates that player; the last remaining player wins the animated confetti
 screen. If the group reaches 32 colours, the active player with the most
-completed rounds wins. The tones use the speaker melody's pitched notes and fade in and
-out to avoid clicks. Multiplayer uses the existing ESP-NOW network capability
-and does not need a Wi-Fi access point.
+completed rounds wins. The tones use the speaker melody's pitched notes and
+fade in and out to avoid clicks. Multiplayer uses the existing ESP-NOW
+network capability and does not need a Wi-Fi access point.
 
 ```mermaid
 sequenceDiagram

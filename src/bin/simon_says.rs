@@ -160,7 +160,7 @@ enum WirePhase {
     Showing,
     /// One player is repeating the pattern.
     Listening,
-    /// A correct round ended and the sequence is about to grow.
+    /// The host is pausing before another turn or a new sequence.
     NextRound,
     /// One player's mistake ended the match.
     GameOver,
@@ -2196,7 +2196,7 @@ impl TonePlayer {
     }
 }
 
-/// Fade a note in and out using the ramp length of the built-in melody synth.
+/// Fade a note in and out so its start and end remain smooth.
 fn tone_envelope(position: usize) -> f32 {
     let rising = position.min(TONE_RAMP_FRAMES);
     let falling = TONE_FRAMES.saturating_sub(position).min(TONE_RAMP_FRAMES);
