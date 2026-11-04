@@ -32,3 +32,5 @@ pub mod light;
 pub mod lines;
 pub mod network;
 pub mod touch;
+
+pub mod timer;

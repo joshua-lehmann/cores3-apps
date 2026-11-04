@@ -1,4 +1,4 @@
-# Simon Sound
+# CoreS3 Apps
 
 Firmware and a colour-and-sound memory game for the **M5Stack CoreS3 Lite**,
 written in Rust for the ESP32-S3. Play solo or challenge nearby boards over
@@ -68,7 +68,7 @@ After installing:
 
 ## Build
 
-Every application is a binary in `src/bin/`. Build one by name:
+Every application is a binary in `apps/`. Build one by name:
 
 ```bash
 cargo build --release --bin imu_color
@@ -83,8 +83,18 @@ cargo build --release --bin simon_says
 ```
 
 ```bash
+cargo build --release --bin timer
+```
+
+```bash
 cargo build --release --bin demo
 ```
+
+The standalone `timer` offers six presets from 30 seconds to 25 minutes. Tap
+the arrows to choose a preset, START to start or resume, PAUSE to pause, and
+RESET to restore the selected duration. While stopped, return the device to
+level and tilt it left or right to change presets. To flash it using the
+workflow below, run `cargo dist --package timer --bin timer`.
 
 Without `--bin`, `cargo build --release` builds all of them. The first build
 takes a few minutes. Later builds take seconds.
@@ -95,13 +105,13 @@ To put an application on the board:
    file `firmware.bin` there.
 
    ```bash
-   cargo dist --bin imu_color
+   cargo dist --package cores3-experiments --bin imu_color
    ```
 
-2. Start [autoflash](autoflash/README.md) in a second terminal:
+2. Start [autoflash](tools/autoflash/README.md) in a second terminal:
 
    ```bash
-   cd autoflash && cargo run --release
+   cd tools/autoflash && cargo run --release
    ```
 
 3. Open <http://localhost:8080> in Chrome or Edge.
@@ -123,7 +133,7 @@ it, run:
 ```
 
 This builds the documentation and serves it at
-<http://localhost:8000/simon_sound/>. VS Code forwards the port from the
+<http://localhost:8000/cores3_device/>. VS Code forwards the port from the
 container to your computer, so open that link in your browser. Stop the
 server with Ctrl+C.
 
@@ -189,7 +199,7 @@ your computer's target instead.
 - **Screen and touch** use the same coordinates: `Point::new(x, y)`. The
   origin is the top-left corner, `x` grows to the right and `y` grows down.
 - **Colours** are `Rgb565`: 16 bits per pixel, 5 for red, 6 for green, 5 for
-  blue. `simon_sound::ui::theme` has the project colours. After
+  blue. `cores3_device::ui::theme` has the project colours. After
   `use embedded_graphics::prelude::*;` you can also use `Rgb565::RED`,
   `Rgb565::new(r, g, b)` and the other built-in colours.
 - **The IMU** reports how the board is held, in the *screen frame*:
@@ -219,7 +229,7 @@ your computer's target instead.
 
 ## Your first application
 
-`src/bin/imu_color.rs` shows the progress of the compass calibration. The
+`apps/experiments/src/bin/imu_color.rs` shows the progress of the compass calibration. The
 percentage is in the middle of the screen, and the colour shows the stage:
 
 | Progress | Colour |
@@ -251,7 +261,7 @@ use arrayvec::ArrayString;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-use simon_sound::{
+use cores3_device::{
     Board,
     capabilities::display::{SCREEN, SIZE},
     ui::{Canvas, common, theme},
@@ -352,7 +362,7 @@ Line by line:
 
 ## Create your own application
 
-Copy `src/bin/template.rs` to a new file, for example `src/bin/my_hack.rs`.
+Copy `apps/experiments/src/bin/template.rs` to `apps/experiments/src/bin/my_hack.rs` for a quick experiment. For a standalone application, create a package under `apps/` and add it to the workspace members in `Cargo.toml`.
 The copy builds and runs without changes: a light blue spot follows your
 finger on a dark blue screen. Every application has a loop with the same
 three steps:
@@ -390,13 +400,10 @@ Build it:
 cargo build --release --bin my_hack
 ```
 
-You do not need to register the file anywhere. Cargo finds every file in
-`src/bin/` by itself, and CI (the automatic build on GitHub) builds every
-binary. To put it on the board, use `cargo dist --bin my_hack` as described
+Cargo discovers files in `apps/experiments/src/bin/` as experimental binaries; standalone packages must be registered as workspace members. CI builds the workspace binaries. To put it on the board, use `cargo dist --package cores3-experiments --bin my_hack` as described
 in [Build](#build).
 
-When the application grows, turn it into a folder: `src/bin/my_hack/main.rs`
-plus more modules next to it, like `src/bin/demo/`.
+When the application grows, create a workspace package such as `apps/demo/`, with `src/main.rs` and modules next to it.
 
 Keep the rules of your application in your application: what a touch means,
 what a message means, which colour is which. The capabilities stay general.
@@ -413,7 +420,7 @@ an index past the end of an array, or a `panic!`. The serial log then shows:
 
 ```text
 ====================== PANIC ======================
-panicked at src/bin/panic_backtrace.rs:89:5:
+panicked at apps/experiments/src/bin/panic_backtrace.rs:89:5:
 index out of bounds: the len is 3 but the index is 3
 
 Backtrace:
@@ -441,9 +448,9 @@ line of each address. It also shows the functions that the compiler inlined
 has absolute paths and more frames below your code.
 
 ```text
-0x4205f584: panic_backtrace::band_name at src/bin/panic_backtrace.rs:89
- (inlined by) panic_backtrace::on_tap at src/bin/panic_backtrace.rs:78
- (inlined by) ...main_task... at src/bin/panic_backtrace.rs:67
+0x4205f584: panic_backtrace::band_name at apps/experiments/src/bin/panic_backtrace.rs:89
+ (inlined by) panic_backtrace::on_tap at apps/experiments/src/bin/panic_backtrace.rs:78
+ (inlined by) ...main_task... at apps/experiments/src/bin/panic_backtrace.rs:67
 ```
 
 Give the script the name of the application that you flashed. Decode the
@@ -500,7 +507,7 @@ as wide as the surface.
 
 ```rust
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-use simon_sound::capabilities::display::{HEIGHT, SCREEN};
+use cores3_device::capabilities::display::{HEIGHT, SCREEN};
 
 display.surface(SCREEN).render_scanlines(|y, row| {
     row.fill(if y < HEIGHT / 2 { Rgb565::BLUE } else { Rgb565::WHITE });
@@ -521,7 +528,7 @@ use embedded_graphics::{
     prelude::*,
     primitives::{Circle, PrimitiveStyle},
 };
-use simon_sound::{
+use cores3_device::{
     capabilities::display::{SCREEN, SIZE},
     ui::{Canvas, common, theme},
 };
@@ -547,7 +554,7 @@ The queue holds 32 events. When it is nearly full, new events are dropped:
   you never get a press without its release.
 
 ```rust
-use simon_sound::capabilities::touch::TouchEvent;
+use cores3_device::capabilities::touch::TouchEvent;
 
 while let Some(event) = touch.next_event() {
     match event {
@@ -562,7 +569,7 @@ while let Some(event) = touch.next_event() {
 100 times per second.
 
 ```rust
-use simon_sound::capabilities::imu::MagStatus;
+use cores3_device::capabilities::imu::MagStatus;
 
 if let Some(sample) = imu.latest() {
     let roll = sample.attitude.roll_deg;
@@ -580,7 +587,7 @@ Up to 8 blocks (about 256 ms) wait in a queue. When your application reads
 too slowly, the oldest block is dropped, and `info.dropped_blocks` counts it.
 
 ```rust
-use simon_sound::capabilities::audio;
+use cores3_device::capabilities::audio;
 
 let mut block = [0i16; audio::SAMPLES_PER_BLOCK];
 if let Some(info) = microphone.next_block(&mut block) {
@@ -593,7 +600,7 @@ audio to the queue on every loop iteration. When the queue is empty, the
 board plays silence. `SineWave` makes tones.
 
 ```rust
-use simon_sound::{capabilities::audio, synth::SineWave};
+use cores3_device::{capabilities::audio, synth::SineWave};
 
 let mut tone = SineWave::new(880.0);
 
@@ -610,7 +617,7 @@ your application. Every board in the room receives every message, but only
 messages with that name decode as `Hello`.
 
 ```rust
-use simon_sound::capabilities::network::Message;
+use cores3_device::capabilities::network::Message;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -652,7 +659,7 @@ Limits of the network:
 boot. You can draw a frame directly on a surface.
 
 ```rust
-use simon_sound::capabilities::display::SCREEN;
+use cores3_device::capabilities::display::SCREEN;
 
 if let Some(camera) = camera.as_mut()
     && let Some(mut frame) = camera.begin_frame()
@@ -715,7 +722,7 @@ outside 1 to 100. Use `Brightness::try_from(percent)` for a number computed
 at run time: it returns an error instead.
 
 ```rust
-use simon_sound::capabilities::backlight::Brightness;
+use cores3_device::capabilities::backlight::Brightness;
 
 backlight.set(Brightness::new(30));
 ```
@@ -787,7 +794,7 @@ and its state. Copy this pattern when your program becomes too large for
 Speaker, Camera, Proximity (with ambient light), Settings (backlight)
 and Log screens, and a navigation rail (a column of icons) to switch between
 them. Every screen implements the same small `Screen` trait. To add a
-screen, copy `src/bin/demo/screens/settings/`. It has a KDL layout file (a
+screen, copy `apps/demo/src/screens/settings/`. It has a KDL layout file (a
 text file that describes the labels and their positions), a slider, and one
 capability handle.
 
@@ -857,29 +864,27 @@ tells the network what it needs to know about your type.
 ## Project folders
 
 ```text
-crates/core/        hardware-independent logic with tests
-src/
-├── lib.rs          the library every application uses
-├── bin/            the applications: demo/, imu_color.rs, light_meter.rs, color_ping.rs, panic_backtrace.rs, template.rs
-├── board/          the PCB: pins, power rails, I2C bus, PSRAM, Board::init() and CPU1
-├── capabilities/   one module per capability: the APIs you call
-├── logging.rs      logging with on-device history, memory usage report
-├── synth.rs        sine waves and note frequencies for the speaker
-└── ui/             canvas, palette, text helpers, slider, embedded-gui glue
+apps/simon_says/     Simon Says firmware
+apps/timer/          Timer firmware
+apps/demo/           Hardware demonstration firmware
+apps/experiments/    Experimental firmware binaries
+crates/core/         Hardware-independent logic and tests
+crates/device/       Shared board, capabilities, UI, and synthesis
+tools/autoflash/     Browser flashing and local server
 ```
 
 ## Where does my code go?
 
 | I want to... | Put it in... |
 | --- | --- |
-| Build a new application | `src/bin/my_app.rs` |
-| Add a screen to the demo | `src/bin/demo/screens/` |
-| Change the demo's navigation rail | `src/bin/demo/navigation.rs` |
-| Add a reusable drawing helper or widget | `src/ui/` |
-| Expose a new hardware operation | the matching `src/capabilities/...` module |
+| Build a new application | a new workspace package under `apps/` |
+| Add a screen to the demo | `apps/demo/src/screens/` |
+| Change the demo's navigation rail | `apps/demo/src/navigation.rs` |
+| Add a reusable drawing helper or widget | `crates/device/ui/` |
+| Expose a new hardware operation | the matching `crates/device/capabilities/...` module |
 | Change how a sensor is configured | the matching capability |
-| Change pins, power or reset wiring | `src/board/` |
-| Change the power-up order | `src/board/` |
+| Change pins, power or reset wiring | `crates/device/board/` |
+| Change the power-up order | `crates/device/board/` |
 | Add logic that should have tests | `crates/core/` |
 
 A simple rule:
@@ -890,12 +895,12 @@ A simple rule:
 
 ## Reading order
 
-1. `src/bin/imu_color.rs` and `src/bin/template.rs`
-2. `src/bin/color_ping.rs`
-3. `src/lib.rs` and `src/board/mod.rs`
-4. `src/bin/demo/main.rs`, then `src/bin/demo/screens/settings/`
-5. one capability API, for example `src/capabilities/imu/mod.rs`
-6. `src/capabilities/display/mod.rs` and `src/ui/canvas.rs`
+1. `apps/experiments/src/bin/imu_color.rs` and `apps/experiments/src/bin/template.rs`
+2. `apps/experiments/src/bin/color_ping.rs`
+3. `crates/device/lib.rs` and `crates/device/board/mod.rs`
+4. `apps/demo/src/main.rs`, then `apps/demo/src/screens/settings/`
+5. one capability API, for example `crates/device/capabilities/imu/mod.rs`
+6. `crates/device/capabilities/display/mod.rs` and `crates/device/ui/canvas.rs`
 7. the drivers and `crates/core`, only when you need them
 
 ## Going deeper
@@ -910,3 +915,8 @@ built:
 - the camera path
 - the network protocol
 - common mistakes, a glossary, and the design rules behind the structure
+
+Version tags publish merged application images as `<app>.bin` release assets.
+The images are generated with `cargo dist --package <app> --bin <app>` and flash at `0x0`.
+
+Flash published firmware without installing tools at [Autoflash on GitHub Pages](https://joshua-lehmann.github.io/cores3-apps/). Use desktop Chrome or Edge, connect the CoreS3 over USB, authorize it, and select a release. See the [Autoflash guide](tools/autoflash/README.md) for details and local development.

@@ -1,6 +1,6 @@
 //! Magnetometer calibration on a synthetic distorted field.
 
-use simon_sound_core::imu::{bmm150::Calibration, vec3};
+use cores3_core::imu::{bmm150::Calibration, vec3};
 
 /// Hard-iron offset of the synthetic enclosure.
 const CENTER_UT: [f32; 3] = [120.0, -80.0, 40.0];

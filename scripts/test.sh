@@ -10,4 +10,4 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 rust_version="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)"
 host_target="$(rustc +"$rust_version" -vV | sed -n 's/^host: //p')"
-exec cargo +"$rust_version" test -p simon-sound-core --target "$host_target" "$@"
+exec cargo +"$rust_version" test -p cores3-core --target "$host_target" "$@"

@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use simon_sound_core::network::{
+use cores3_core::network::{
     message::{DecodeError, IncomingMessage, Message, OutgoingMessage, SendError},
     protocol::{DeviceId, MAX_PAYLOAD, MacAddress},
     state::{Heard, MAX_PEERS, NetworkState, QueueCounters, RadioChannel, Status},
@@ -110,7 +110,7 @@ fn message_kinds_come_from_their_names() {
     assert_ne!(DemoMessage::KIND, ColorPing::KIND);
     assert_eq!(
         DemoMessage::KIND,
-        simon_sound_core::network::message::message_kind("demo.ping-pong")
+        cores3_core::network::message::message_kind("demo.ping-pong")
     );
 }
 

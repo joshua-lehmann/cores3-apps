@@ -1,0 +1,44 @@
+[package]
+name = "cores3-experiments"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Keep the ESP crates on one coherent monorepo snapshot. The published
+# esp-radio 1.0.0-beta.0 crate still targets esp-hal 1.1, while the esp-hal
+# 1.2.0 release tag contains its 1.2-compatible source alongside esp-rtos 0.4.0.
+esp-hal = { version = "1.2.0", git = "https://github.com/esp-rs/esp-hal", rev = "dbd951f78c1276461ea3050c2ba71f552a3508ef", features = ["esp32s3", "log-04", "unstable"] }
+esp-rtos = { version = "0.4.0", git = "https://github.com/esp-rs/esp-hal", rev = "dbd951f78c1276461ea3050c2ba71f552a3508ef", features = ["embassy", "esp-alloc", "esp-radio", "esp32s3", "log-04"] }
+esp-radio = { version = "=1.0.0-beta.0", git = "https://github.com/esp-rs/esp-hal", rev = "dbd951f78c1276461ea3050c2ba71f552a3508ef", default-features = false, features = ["esp32s3", "esp-now", "esp-alloc", "log-04", "unstable"] }
+esp-bootloader-esp-idf = { version = "0.6.0", git = "https://github.com/esp-rs/esp-hal", rev = "dbd951f78c1276461ea3050c2ba71f552a3508ef", features = ["esp32s3", "log-04"] }
+log = "0.4.27"
+esp-alloc = { version = "0.11.0", git = "https://github.com/esp-rs/esp-hal", rev = "dbd951f78c1276461ea3050c2ba71f552a3508ef", features = ["internal-heap-stats"] }
+allocator-api2 = { version = "0.3", default-features = false, features = ["alloc"] }
+esp-backtrace = { version = "0.20.0", git = "https://github.com/esp-rs/esp-hal", rev = "dbd951f78c1276461ea3050c2ba71f552a3508ef", features = ["esp32s3", "panic-handler", "println"] }
+esp-println = { version = "0.18.0", git = "https://github.com/esp-rs/esp-hal", rev = "dbd951f78c1276461ea3050c2ba71f552a3508ef", features = ["esp32s3", "log-04", "jtag-serial"], default-features = false }
+embassy-executor = { version = "0.10.0", features = ["log"] }
+embassy-time = { version = "0.5.0", features = ["log"] }
+embassy-sync = { version = "0.8.0" }
+embassy-futures = "0.1"
+libm = "0.2"
+critical-section = "1.2.0"
+static_cell = "2.1.1"
+embedded-graphics = "0.8"
+# Rich widgets use floating-point helpers such as round/sin/cos. On our
+# `no_std` Xtensa target those methods are supplied by embedded-gui's `libm`
+# feature rather than by `std`.
+embedded-gui = { version = "=0.2.6", default-features = false, features = ["embedded-graphics", "libm", "macros", "rich-widgets"] }
+mipidsi = "0.8"
+display-interface-spi = "0.5"
+embedded-hal-bus = "0.3"
+embedded-hal = "1.0"
+embedded-hal-async = "1.0"
+arrayvec = { version = "0.7.8", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+postcard = { version = "1.1", default-features = false }
+cores3-core = { path = "../../crates/core" }
+cores3-device = { path = "../../crates/device" }

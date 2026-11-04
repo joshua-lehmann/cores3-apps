@@ -184,6 +184,84 @@ dependencies = [
 ]
 
 [[package]]
+name = "cores3-core"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "libm",
+ "log",
+ "postcard",
+ "serde",
+]
+
+[[package]]
+name = "cores3-device"
+version = "0.1.0"
+dependencies = [
+ "allocator-api2",
+ "arrayvec",
+ "cores3-core",
+ "critical-section",
+ "display-interface-spi",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "embedded-graphics",
+ "embedded-gui",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-hal-bus",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-radio",
+ "esp-rtos",
+ "libm",
+ "log",
+ "mipidsi",
+ "postcard",
+ "serde",
+ "static_cell",
+]
+
+[[package]]
+name = "cores3-experiments"
+version = "0.1.0"
+dependencies = [
+ "allocator-api2",
+ "arrayvec",
+ "cores3-core",
+ "cores3-device",
+ "critical-section",
+ "display-interface-spi",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "embedded-graphics",
+ "embedded-gui",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-hal-bus",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-radio",
+ "esp-rtos",
+ "libm",
+ "log",
+ "mipidsi",
+ "postcard",
+ "serde",
+ "static_cell",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -369,6 +447,40 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "demo"
+version = "0.1.0"
+dependencies = [
+ "allocator-api2",
+ "arrayvec",
+ "cores3-core",
+ "cores3-device",
+ "critical-section",
+ "display-interface-spi",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "embedded-graphics",
+ "embedded-gui",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-hal-bus",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-radio",
+ "esp-rtos",
+ "libm",
+ "log",
+ "mipidsi",
+ "postcard",
+ "serde",
+ "static_cell",
 ]
 
 [[package]]
@@ -2108,11 +2220,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
-name = "simon-sound"
+name = "simon_says"
 version = "0.1.0"
 dependencies = [
  "allocator-api2",
  "arrayvec",
+ "cores3-core",
+ "cores3-device",
  "critical-section",
  "display-interface-spi",
  "embassy-executor",
@@ -2136,19 +2250,7 @@ dependencies = [
  "mipidsi",
  "postcard",
  "serde",
- "simon-sound-core",
  "static_cell",
-]
-
-[[package]]
-name = "simon-sound-core"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "libm",
- "log",
- "postcard",
- "serde",
 ]
 
 [[package]]
@@ -2303,6 +2405,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "timer"
+version = "0.1.0"
+dependencies = [
+ "allocator-api2",
+ "arrayvec",
+ "cores3-core",
+ "cores3-device",
+ "critical-section",
+ "display-interface-spi",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "embedded-graphics",
+ "embedded-gui",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-hal-bus",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-radio",
+ "esp-rtos",
+ "libm",
+ "log",
+ "mipidsi",
+ "postcard",
+ "serde",
+ "static_cell",
 ]
 
 [[package]]

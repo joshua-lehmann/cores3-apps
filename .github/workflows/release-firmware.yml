@@ -1,0 +1,44 @@
+name: Publish firmware
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Read Rust version
+        run: echo "RUST_VERSION=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_ENV"
+      - uses: esp-rs/xtensa-toolchain@v1.7
+        with:
+          default: true
+          buildtargets: esp32s3
+          version: ${{ env.RUST_VERSION }}.0
+          ldproxy: false
+      - uses: Swatinem/rust-cache@v2
+      - name: Install espflash
+        run: cargo install cargo-espflash --locked
+      - name: Build merged images at address 0x0
+        run: |
+          mkdir -p release-images
+          for app in simon_says timer demo; do
+            cargo dist --package "$app" --bin "$app"
+            mv firmware.bin "release-images/$app.bin"
+          done
+      - name: Publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-images/*.bin --clobber
+          else
+            gh release create "$RELEASE_TAG" release-images/*.bin --generate-notes
+          fi

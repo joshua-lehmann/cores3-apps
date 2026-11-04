@@ -1,0 +1,57 @@
+name: Deploy Autoflash to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published, edited, deleted]
+  workflow_run:
+    workflows: [Publish firmware]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: autoflash-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/autoflash/package-lock.json
+      - run: npm ci
+        working-directory: tools/autoflash
+      - run: npm test
+        working-directory: tools/autoflash
+      - run: npm run build:client
+        working-directory: tools/autoflash
+        env:
+          VITE_GITHUB_PAGES: 'true'
+      - name: Mirror public release images for browser access
+        working-directory: tools/autoflash
+        run: python3 scripts/mirror-releases.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: tools/autoflash/dist/client
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

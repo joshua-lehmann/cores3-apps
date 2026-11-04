@@ -6,7 +6,7 @@
 //! gives it. A payload is only decoded into a type whose kind matches.
 //!
 //! ```
-//! use simon_sound_core::network::message::Message;
+//! use cores3_core::network::message::Message;
 //! use serde::{Deserialize, Serialize};
 //!
 //! #[derive(Serialize, Deserialize)]

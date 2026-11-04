@@ -32,10 +32,30 @@ jobs:
       - name: Lint the core crate and its tests
         run: |
           host_target="$(rustc +"$RUST_VERSION" -vV | sed -n 's/^host: //p')"
-          cargo +"$RUST_VERSION" clippy -p simon-sound-core --all-targets --target "$host_target" -- -D warnings
+          cargo +"$RUST_VERSION" clippy -p cores3-core --all-targets --target "$host_target" -- -D warnings
 
       - name: Run host tests
         run: RUSTFLAGS="-D warnings" ./scripts/test.sh
+
+  autoflash:
+    name: Autoflash checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/autoflash/package-lock.json
+      - run: npm ci
+        working-directory: tools/autoflash
+      - run: npm test
+        working-directory: tools/autoflash
+      - run: npm run build
+        working-directory: tools/autoflash
+      - name: Test the Autoflash server
+        run: cargo +stable test --locked
+        working-directory: tools/autoflash
 
   firmware:
     name: Firmware lint and build

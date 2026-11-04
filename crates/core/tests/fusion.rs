@@ -1,6 +1,6 @@
 //! Regression tests for the orientation fusion.
 
-use simon_sound_core::imu::{
+use cores3_core::imu::{
     Orientation,
     fusion::{Fusion, Gains},
 };
