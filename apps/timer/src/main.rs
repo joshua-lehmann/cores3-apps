@@ -22,7 +22,8 @@ use embedded_graphics::{
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-use cores3_core::timer::{Countdown, PRESETS, Tilt};
+use cores3_core::timer::{Countdown, Intervals, PRESETS, Tilt};
+const INTERVALS: [u64; 7] = [20_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_500_000];
 const LABELS: [&str; 6] = [
     "30 SECONDS",
     "1 MINUTE",
@@ -44,20 +45,54 @@ async fn main(_spawner: Spawner) -> ! {
     let mut canvas = Canvas::new(SIZE);
     let mut timer = Countdown::default();
     let mut tilt = Tilt::default();
+    let mut intervals = Intervals::default();
+    let mut interval_mode = false;
+    let mut edit_phase = 0usize;
+    let mut interval_indices = [1usize, 0usize];
     let mut chime = 0usize;
     let mut wave = SineWave::new(783.99);
     let mut redraw = true;
     let mut last_second = u64::MAX;
+    let mut diagnostics = false;
+    let mut last_diagnostic = 0;
     loop {
         let now = Instant::now().as_millis();
-        if timer.update(now) {
+        if if interval_mode {
+            intervals.update(now)
+        } else {
+            timer.update(now)
+        } {
             chime = 1;
             redraw = true;
         }
         if let Some(sample) = imu.latest() {
-            if !timer.running() && sample.acceleration_m_s2.is_some() {
+            if diagnostics && now.saturating_sub(last_diagnostic) >= 1_000 {
+                last_diagnostic = now;
+                log::info!(
+                    "timer imu roll={:.1} pitch={:.1} down={:?} gyro_deg_s={:?}",
+                    sample.attitude.roll_deg,
+                    sample.attitude.pitch_deg,
+                    sample.attitude.down,
+                    sample.angular_velocity_deg_s
+                );
+            }
+            if !(if interval_mode {
+                intervals.running()
+            } else {
+                timer.running()
+            }) && sample.acceleration_m_s2.is_some()
+            {
                 if let Some(direction) = tilt.sample(sample.attitude.down, now) {
-                    timer.select(direction);
+                    if interval_mode {
+                        adjust_interval(
+                            &mut intervals,
+                            &mut interval_indices,
+                            edit_phase,
+                            direction,
+                        );
+                    } else {
+                        timer.select(direction);
+                    }
                     redraw = true;
                 }
             } else {
@@ -66,24 +101,63 @@ async fn main(_spawner: Spawner) -> ! {
         }
         while let Some(event) = touch.next_event() {
             if let TouchEvent::Pressed(p) = event
+                && p.y < 40
+                && !timer.running()
+                && !intervals.running()
+            {
+                if p.x < 110 {
+                    interval_mode = !interval_mode;
+                    timer.reset();
+                    intervals.reset();
+                    tilt.clear();
+                } else if interval_mode {
+                    edit_phase = (edit_phase + 1) % 3;
+                }
+                redraw = true;
+            } else if let TouchEvent::Pressed(p) = event
+                && (145..180).contains(&p.y)
+            {
+                diagnostics = !diagnostics;
+                redraw = true;
+            } else if let TouchEvent::Pressed(p) = event
                 && p.y >= 180
             {
-                if p.x < 80 {
-                    timer.select(-1);
-                } else if p.x >= 240 {
-                    timer.select(1);
+                if p.x < 80 || p.x >= 240 {
+                    let direction = if p.x < 80 { -1 } else { 1 };
+                    if interval_mode && !intervals.running() {
+                        adjust_interval(
+                            &mut intervals,
+                            &mut interval_indices,
+                            edit_phase,
+                            direction as i8,
+                        );
+                    } else if !interval_mode {
+                        timer.select(direction as i8);
+                    }
                 } else if p.x < 160 {
-                    timer.toggle(now);
+                    if interval_mode {
+                        intervals.toggle(now);
+                    } else {
+                        timer.toggle(now);
+                    }
                     tilt.clear();
                 } else {
-                    timer.reset();
+                    if interval_mode {
+                        intervals.reset();
+                    } else {
+                        timer.reset();
+                    }
                     speaker.clear();
                     chime = 0;
                 }
                 redraw = true;
             }
         }
-        let remaining = timer.remaining(now);
+        let remaining = if interval_mode {
+            intervals.remaining(now)
+        } else {
+            timer.remaining(now)
+        };
         if chime > 0 {
             feed_chime(&mut speaker, &mut wave, &mut chime);
         }
@@ -97,13 +171,46 @@ async fn main(_spawner: Spawner) -> ! {
                 &mut canvas,
                 timer.preset,
                 remaining,
-                timer.running(),
-                timer.finished,
+                if interval_mode {
+                    intervals.running()
+                } else {
+                    timer.running()
+                },
+                if interval_mode {
+                    intervals.finished()
+                } else {
+                    timer.finished
+                },
+                diagnostics,
+                if interval_mode {
+                    Some((
+                        intervals.phase(),
+                        edit_phase,
+                        intervals.duration(0),
+                        intervals.duration(1),
+                        intervals.round(),
+                        intervals.rounds(),
+                    ))
+                } else {
+                    None
+                },
             );
             canvas.show(&mut display.surface(SCREEN));
             redraw = false;
         }
         Timer::after(Duration::from_millis(10)).await;
+    }
+}
+
+/// Change the selected phase duration or the number of rounds.
+fn adjust_interval(timer: &mut Intervals, indices: &mut [usize; 2], editing: usize, direction: i8) {
+    if editing == 2 {
+        let count = (i16::from(timer.rounds()) + i16::from(direction)).clamp(1, 99) as u8;
+        timer.set_rounds(count);
+    } else {
+        indices[editing] = (indices[editing] as i32 + i32::from(direction))
+            .rem_euclid(INTERVALS.len() as i32) as usize;
+        timer.configure(editing, INTERVALS[indices[editing]]);
     }
 }
 
@@ -128,15 +235,41 @@ fn feed_chime(speaker: &mut Speaker, wave: &mut SineWave, position: &mut usize) 
     }
 }
 
-fn draw(canvas: &mut Canvas, preset: usize, remaining: u64, running: bool, finished: bool) {
+fn draw(
+    canvas: &mut Canvas,
+    preset: usize,
+    remaining: u64,
+    running: bool,
+    finished: bool,
+    diagnostics: bool,
+    interval: Option<(usize, usize, u64, u64, u8, u8)>,
+) {
     let bg = Rgb565::new(2, 5, 8);
     let accent = Rgb565::new(8, 50, 25);
     canvas.clear(bg);
     let area = |x, y, w, h| Rectangle::new(Point::new(x, y), Size::new(w, h));
+    let mut header = arrayvec::ArrayString::<40>::new();
+    use core::fmt::Write;
+    if finished {
+        let _ = write!(header, "COMPLETE");
+    } else if let Some((phase, editing, first, second, round, rounds)) = interval {
+        let _ = write!(
+            header,
+            "LOOP {}/{} P{} {}/{}s {}",
+            round,
+            rounds,
+            phase + 1,
+            first / 1000,
+            second / 1000,
+            ["EDIT 1", "EDIT 2", "ROUNDS"][editing]
+        );
+    } else {
+        let _ = write!(header, "MODE SINGLE  {}", LABELS[preset]);
+    }
     common::centered_text(
         canvas,
         area(0, 15, 320, 25),
-        if finished { "COMPLETE" } else { LABELS[preset] },
+        &header,
         common::TITLE_FONT,
         accent,
     );
@@ -145,10 +278,25 @@ fn draw(canvas: &mut Canvas, preset: usize, remaining: u64, running: bool, finis
     let _ = area(30, 135, 260, 8)
         .into_styled(PrimitiveStyle::with_fill(Rgb565::new(5, 12, 14)))
         .draw(canvas);
-    let width = (260 * remaining / PRESETS[preset]) as u32;
+    let total = interval.map_or(
+        PRESETS[preset],
+        |(phase, _, first, second, _, _)| if phase == 0 { first } else { second },
+    );
+    let width = (260 * remaining / total) as u32;
     let _ = area(30, 135, width, 8)
         .into_styled(PrimitiveStyle::with_fill(accent))
         .draw(canvas);
+    common::centered_text(
+        canvas,
+        area(0, 150, 320, 22),
+        if diagnostics {
+            "IMU LOG ON - TAP TO STOP"
+        } else {
+            "TILT L < PRESET > R  |  TAP: IMU LOG"
+        },
+        common::DENSE_FONT,
+        Rgb565::WHITE,
+    );
     common::centered_text(
         canvas,
         area(0, 180, 80, 60),

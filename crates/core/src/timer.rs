@@ -175,3 +175,180 @@ mod tests {
         assert_eq!(g.sample(right, 1300), None);
     }
 }
+
+/// Two alternating countdown phases, driven by monotonic milliseconds.
+#[derive(Debug)]
+pub struct Intervals {
+    /// Duration of each phase in milliseconds.
+    durations: [u64; 2],
+    /// Currently active phase, zero or one.
+    phase: usize,
+    /// Milliseconds left while stopped.
+    remaining: u64,
+    /// Deadline while running.
+    deadline: Option<u64>,
+    /// Number of full work and rest pairs requested.
+    rounds: u8,
+    /// Number of pairs completed.
+    completed_rounds: u8,
+    /// The final rest phase has ended.
+    finished: bool,
+}
+
+impl Default for Intervals {
+    fn default() -> Self {
+        Self {
+            durations: [30_000, 20_000],
+            phase: 0,
+            remaining: 30_000,
+            deadline: None,
+            rounds: 5,
+            completed_rounds: 0,
+            finished: false,
+        }
+    }
+}
+impl Intervals {
+    /// The active phase index.
+    pub fn phase(&self) -> usize {
+        self.phase
+    }
+    /// The configured duration of a phase.
+    pub fn duration(&self, phase: usize) -> u64 {
+        self.durations[phase]
+    }
+    /// Whether the timer is running.
+    pub fn running(&self) -> bool {
+        self.deadline.is_some()
+    }
+    /// Remaining milliseconds at the supplied time.
+    pub fn remaining(&self, now: u64) -> u64 {
+        self.deadline
+            .map_or(self.remaining, |end| end.saturating_sub(now))
+    }
+    /// Configured number of work/rest pairs.
+    pub fn rounds(&self) -> u8 {
+        self.rounds
+    }
+    /// Current round, one-based, including after completion.
+    pub fn round(&self) -> u8 {
+        (self.completed_rounds + 1).min(self.rounds)
+    }
+    /// Whether all configured rounds have finished.
+    pub fn finished(&self) -> bool {
+        self.finished
+    }
+    /// Set the number of rounds while stopped, resetting the session.
+    pub fn set_rounds(&mut self, rounds: u8) {
+        if !self.running() && (1..=99).contains(&rounds) {
+            self.rounds = rounds;
+            self.reset();
+        }
+    }
+    /// Replace a phase duration while stopped. Zero durations are ignored.
+    pub fn configure(&mut self, phase: usize, duration: u64) {
+        if !self.running() && phase < 2 && duration > 0 {
+            self.durations[phase] = duration;
+            self.reset();
+        }
+    }
+    /// Return to the start of phase one.
+    pub fn reset(&mut self) {
+        self.phase = 0;
+        self.remaining = self.durations[0];
+        self.deadline = None;
+        self.completed_rounds = 0;
+        self.finished = false;
+    }
+    /// Start or pause at the supplied time.
+    pub fn toggle(&mut self, now: u64) {
+        self.update(now);
+        if self.running() {
+            self.remaining = self.remaining(now);
+            self.deadline = None;
+        } else {
+            if self.finished {
+                self.reset();
+            }
+            self.deadline = Some(now.saturating_add(self.remaining));
+        }
+    }
+    /// Advance through elapsed phases; return whether at least one ended.
+    pub fn update(&mut self, now: u64) -> bool {
+        let Some(mut end) = self.deadline else {
+            return false;
+        };
+        if now < end {
+            return false;
+        }
+        loop {
+            if self.phase == 1 {
+                self.completed_rounds += 1;
+                if self.completed_rounds >= self.rounds {
+                    self.deadline = None;
+                    self.remaining = 0;
+                    self.finished = true;
+                    return true;
+                }
+            }
+            self.phase ^= 1;
+            end = end.saturating_add(self.durations[self.phase]);
+            if now < end {
+                break;
+            }
+        }
+        self.deadline = Some(end);
+        true
+    }
+}
+
+#[cfg(test)]
+mod interval_tests {
+    use super::Intervals;
+    #[test]
+    fn alternates_without_drift_and_handles_long_delays() {
+        let mut t = Intervals::default();
+        t.toggle(100);
+        assert!(t.update(30_100));
+        assert_eq!(t.phase(), 1);
+        assert_eq!(t.remaining(30_100), 20_000);
+        assert!(t.update(125_100));
+        assert_eq!(t.phase(), 0);
+        assert_eq!(t.remaining(125_100), 5_000);
+        assert!(!t.update(125_101));
+    }
+    #[test]
+    fn completes_after_exact_rounds_and_restarts() {
+        let mut t = Intervals::default();
+        t.set_rounds(2);
+        t.toggle(0);
+        assert!(t.update(30_000));
+        assert_eq!(t.round(), 1);
+        assert!(t.update(50_000));
+        assert_eq!(t.round(), 2);
+        assert!(t.update(100_000));
+        assert!(t.finished());
+        assert!(!t.running());
+        assert_eq!(t.remaining(200_000), 0);
+        assert!(!t.update(200_000));
+        t.toggle(200_000);
+        assert!(!t.finished());
+        assert_eq!(t.round(), 1);
+    }
+    #[test]
+    fn pause_configuration_and_reset() {
+        let mut t = Intervals::default();
+        t.configure(1, 10_000);
+        t.toggle(0);
+        t.configure(1, 5_000);
+        assert_eq!(t.duration(1), 10_000);
+        t.toggle(10_000);
+        assert_eq!(t.remaining(99_000), 20_000);
+        t.toggle(99_000);
+        assert!(t.update(119_000));
+        assert_eq!(t.phase(), 1);
+        t.reset();
+        assert_eq!(t.phase(), 0);
+        assert_eq!(t.remaining(0), 30_000);
+    }
+}
