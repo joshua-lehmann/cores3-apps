@@ -5,3 +5,5 @@ firmware.bin
 node_modules/
 
 **/__pycache__/
+
+/tools/autoflash/dist/

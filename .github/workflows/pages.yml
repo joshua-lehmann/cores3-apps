@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
-  id-token: write
 
 concurrency:
   group: autoflash-pages
@@ -28,9 +27,6 @@ jobs:
          github.event.workflow_run.head_branch == 'main') ||
         github.event.workflow_run.name == 'Publish firmware'))
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -53,13 +49,28 @@ jobs:
         run: python3 scripts/mirror-releases.py
         env:
           GH_TOKEN: ${{ github.token }}
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: tools/autoflash/dist/client
-          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
-        with:
-          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Publish built site to the Pages source branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          site_dir="$GITHUB_WORKSPACE/tools/autoflash/dist/client"
+          touch "$site_dir/.nojekyll"
+          git rev-parse HEAD > "$site_dir/build-revision.txt"
+          git fetch --no-tags origin gh-pages
+          parent="$(git rev-parse FETCH_HEAD)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Build a tree from the output only, without changing the main checkout.
+          export GIT_INDEX_FILE="$RUNNER_TEMP/pages-publish-index"
+          trap 'rm -f "$GIT_INDEX_FILE"' EXIT
+          git read-tree --empty
+          git --work-tree="$site_dir" add --all -- .
+          tree="$(git write-tree)"
+          if [ "$tree" != "$(git rev-parse "$parent^{tree}")" ]; then
+            commit="$(git commit-tree "$tree" -p "$parent" -m "Publish Autoflash from $(git rev-parse --short HEAD)")"
+            # A normal push rejects concurrent updates rather than overwriting them.
+            git push origin "$commit:refs/heads/gh-pages"
+          fi
+          # GITHUB_TOKEN pushes do not trigger branch-based Pages builds themselves.
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"
