@@ -248,30 +248,48 @@ fn draw(
     let accent = Rgb565::new(8, 50, 25);
     canvas.clear(bg);
     let area = |x, y, w, h| Rectangle::new(Point::new(x, y), Size::new(w, h));
-    let mut header = arrayvec::ArrayString::<40>::new();
     use core::fmt::Write;
-    if finished {
-        let _ = write!(header, "COMPLETE");
-    } else if let Some((phase, editing, first, second, round, rounds)) = interval {
-        let _ = write!(
-            header,
-            "LOOP {}/{} P{} {}/{}s {}",
-            round,
-            rounds,
-            phase + 1,
-            first / 1000,
-            second / 1000,
-            ["EDIT 1", "EDIT 2", "ROUNDS"][editing]
-        );
-    } else {
-        let _ = write!(header, "MODE SINGLE  {}", LABELS[preset]);
+    let button = Rgb565::new(5, 13, 16);
+    for rect in [area(8, 5, 100, 34), area(116, 5, 196, 34)] {
+        let _ = rect
+            .into_styled(PrimitiveStyle::with_fill(button))
+            .draw(canvas);
     }
     common::centered_text(
         canvas,
-        area(0, 15, 320, 25),
-        &header,
-        common::TITLE_FONT,
+        area(8, 5, 100, 34),
+        if interval.is_some() {
+            "MODE: LOOP"
+        } else {
+            "MODE: SINGLE"
+        },
+        common::DENSE_FONT,
         accent,
+    );
+    let mut header = arrayvec::ArrayString::<32>::new();
+    if let Some((_, editing, first, second, _, rounds)) = interval {
+        match editing {
+            0 => {
+                let _ = write!(header, "EDIT 1: {}s  >", first / 1000);
+            }
+            1 => {
+                let _ = write!(header, "EDIT 2: {}s  >", second / 1000);
+            }
+            _ => {
+                let _ = write!(header, "ROUNDS: {}  >", rounds);
+            }
+        }
+    } else if finished {
+        let _ = write!(header, "COMPLETE");
+    } else {
+        let _ = write!(header, "{}", LABELS[preset]);
+    }
+    common::centered_text(
+        canvas,
+        area(116, 5, 196, 34),
+        &header,
+        common::BODY_FONT,
+        Rgb565::WHITE,
     );
     let seconds = remaining.div_ceil(1000);
     draw_time(canvas, seconds);
@@ -286,14 +304,32 @@ fn draw(
     let _ = area(30, 135, width, 8)
         .into_styled(PrimitiveStyle::with_fill(accent))
         .draw(canvas);
+    let mut hint = arrayvec::ArrayString::<48>::new();
+    if finished {
+        let _ = write!(hint, "COMPLETE - RESET OR START AGAIN");
+    } else if let Some((phase, _, _, _, round, rounds)) = interval {
+        if running {
+            let _ = write!(
+                hint,
+                "ROUND {}/{} P{} - PAUSE TO EDIT",
+                round,
+                rounds,
+                phase + 1
+            );
+        } else {
+            let _ = write!(hint, "< > OR TILT: ADJUST  |  TAP: LOG");
+        }
+    } else if running {
+        let _ = write!(hint, "PAUSE TO CHANGE MODE OR PRESET");
+    } else if diagnostics {
+        let _ = write!(hint, "IMU LOG ON - TAP TO STOP");
+    } else {
+        let _ = write!(hint, "TILT LEFT < PRESET > RIGHT  | TAP: LOG");
+    }
     common::centered_text(
         canvas,
         area(0, 150, 320, 22),
-        if diagnostics {
-            "IMU LOG ON - TAP TO STOP"
-        } else {
-            "TILT L < PRESET > R  |  TAP: IMU LOG"
-        },
+        &hint,
         common::DENSE_FONT,
         Rgb565::WHITE,
     );
