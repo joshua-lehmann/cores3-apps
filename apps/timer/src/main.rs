@@ -22,16 +22,7 @@ use embedded_graphics::{
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-use cores3_core::timer::{Countdown, Intervals, PRESETS, Tilt};
-const INTERVALS: [u64; 7] = [20_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_500_000];
-const LABELS: [&str; 6] = [
-    "30 SECONDS",
-    "1 MINUTE",
-    "2 MINUTES",
-    "5 MINUTES",
-    "10 MINUTES",
-    "25 MIN / POMODORO",
-];
+use cores3_core::timer::{Countdown, HoldRepeat, Intervals, Tilt, step_duration};
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) -> ! {
@@ -48,7 +39,7 @@ async fn main(_spawner: Spawner) -> ! {
     let mut intervals = Intervals::default();
     let mut interval_mode = false;
     let mut edit_phase = 0usize;
-    let mut interval_indices = [1usize, 0usize];
+    let mut hold = HoldRepeat::default();
     let mut chime = 0usize;
     let mut wave = SineWave::new(783.99);
     let mut redraw = true;
@@ -85,12 +76,7 @@ async fn main(_spawner: Spawner) -> ! {
             {
                 if let Some(direction) = tilt.sample(sample.attitude.down, now) {
                     if interval_mode {
-                        adjust_interval(
-                            &mut intervals,
-                            &mut interval_indices,
-                            edit_phase,
-                            direction,
-                        );
+                        adjust_interval(&mut intervals, edit_phase, direction);
                     } else {
                         timer.select(direction);
                     }
@@ -101,6 +87,21 @@ async fn main(_spawner: Spawner) -> ! {
             }
         }
         while let Some(event) = touch.next_event() {
+            if matches!(event, TouchEvent::Released(_) | TouchEvent::Pressed(_)) {
+                hold.cancel();
+            }
+            if let TouchEvent::Moved(p) = event {
+                let direction = if p.y >= 180 && p.x < 80 {
+                    Some(-1)
+                } else if p.y >= 180 && p.x >= 240 {
+                    Some(1)
+                } else {
+                    None
+                };
+                if direction != hold.direction() {
+                    hold.cancel();
+                }
+            }
             if let TouchEvent::Pressed(p) = event
                 && p.y < 40
                 && p.x < 110
@@ -129,15 +130,11 @@ async fn main(_spawner: Spawner) -> ! {
             {
                 if p.x < 80 || p.x >= 240 {
                     let direction = if p.x < 80 { -1 } else { 1 };
+                    hold.press(direction, now);
                     if interval_mode && !intervals.running() {
-                        adjust_interval(
-                            &mut intervals,
-                            &mut interval_indices,
-                            edit_phase,
-                            direction as i8,
-                        );
+                        adjust_interval(&mut intervals, edit_phase, direction);
                     } else if !interval_mode {
-                        timer.select(direction as i8);
+                        timer.adjust(direction);
                     }
                 } else if p.x < 160 {
                     if interval_mode {
@@ -157,6 +154,14 @@ async fn main(_spawner: Spawner) -> ! {
                 }
                 redraw = true;
             }
+        }
+        if let Some(direction) = hold.update(now) {
+            if interval_mode && !intervals.running() {
+                adjust_interval(&mut intervals, edit_phase, direction);
+            } else if !interval_mode {
+                timer.adjust(direction);
+            }
+            redraw = true;
         }
         let remaining = if interval_mode {
             intervals.remaining(now)
@@ -179,7 +184,7 @@ async fn main(_spawner: Spawner) -> ! {
         if redraw {
             draw(
                 &mut canvas,
-                timer.preset,
+                timer.duration(),
                 remaining,
                 if interval_mode {
                     intervals.running()
@@ -213,14 +218,12 @@ async fn main(_spawner: Spawner) -> ! {
 }
 
 /// Change the selected phase duration or the number of rounds.
-fn adjust_interval(timer: &mut Intervals, indices: &mut [usize; 2], editing: usize, direction: i8) {
+fn adjust_interval(timer: &mut Intervals, editing: usize, direction: i8) {
     if editing == 2 {
         let count = (i16::from(timer.rounds()) + i16::from(direction)).clamp(1, 99) as u8;
         timer.set_rounds(count);
     } else {
-        indices[editing] = (indices[editing] as i32 + i32::from(direction))
-            .rem_euclid(INTERVALS.len() as i32) as usize;
-        timer.configure(editing, INTERVALS[indices[editing]]);
+        timer.configure(editing, step_duration(timer.duration(editing), direction));
     }
 }
 
@@ -247,7 +250,7 @@ fn feed_chime(speaker: &mut Speaker, wave: &mut SineWave, position: &mut usize) 
 
 fn draw(
     canvas: &mut Canvas,
-    preset: usize,
+    duration: u64,
     remaining: u64,
     running: bool,
     finished: bool,
@@ -278,7 +281,7 @@ fn draw(
         common::centered_text(
             canvas,
             area(8, 40, 304, 28),
-            LABELS[preset],
+            "10s STEPS - HOLD TO SPEED UP",
             common::BODY_FONT,
             Rgb565::WHITE,
         );
@@ -317,7 +320,7 @@ fn draw(
         .into_styled(PrimitiveStyle::with_fill(Rgb565::new(5, 12, 14)))
         .draw(canvas);
     let total = interval.map_or(
-        PRESETS[preset],
+        duration,
         |(phase, _, first, second, _, _)| if phase == 0 { first } else { second },
     );
     let width = (260 * remaining / total) as u32;
@@ -344,7 +347,7 @@ fn draw(
     } else if diagnostics {
         let _ = write!(hint, "IMU LOG ON - TAP TO STOP");
     } else {
-        let _ = write!(hint, "TILT OR TAP < > TO CHOOSE");
+        let _ = write!(hint, "TAP +/- 10s - HOLD FOR FASTER");
     }
     common::centered_text(
         canvas,
@@ -411,7 +414,7 @@ fn draw(
     common::centered_text(
         canvas,
         area(0, 180, 80, 60),
-        "<",
+        "-",
         common::TITLE_FONT,
         Rgb565::WHITE,
     );
@@ -432,7 +435,7 @@ fn draw(
     common::centered_text(
         canvas,
         area(240, 180, 80, 60),
-        ">",
+        "+",
         common::TITLE_FONT,
         Rgb565::WHITE,
     );

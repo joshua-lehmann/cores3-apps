@@ -10,6 +10,8 @@ pub struct Countdown {
     pub preset: usize,
     /// Time retained when stopped.
     remaining: u64,
+    /// Configured duration retained across reset.
+    duration: u64,
     /// Monotonic expiration while running.
     deadline: Option<u64>,
     /// Completion remains visible until reset or a new start.
@@ -21,6 +23,7 @@ impl Default for Countdown {
         Self {
             preset: 0,
             remaining: PRESETS[0],
+            duration: PRESETS[0],
             deadline: None,
             finished: false,
         }
@@ -55,7 +58,7 @@ impl Countdown {
             self.deadline = None;
         } else {
             if self.remaining == 0 {
-                self.remaining = PRESETS[self.preset];
+                self.remaining = self.duration;
             }
             self.deadline = Some(now.saturating_add(self.remaining));
             self.finished = false;
@@ -64,7 +67,7 @@ impl Countdown {
     /// Reset the current preset.
     pub fn reset(&mut self) {
         self.deadline = None;
-        self.remaining = PRESETS[self.preset];
+        self.remaining = self.duration;
         self.finished = false;
     }
     /// Select an adjacent preset while stopped.
@@ -72,8 +75,60 @@ impl Countdown {
         if !self.running() {
             self.preset = (self.preset as i32 + direction.signum() as i32)
                 .rem_euclid(PRESETS.len() as i32) as usize;
+            self.duration = PRESETS[self.preset];
             self.reset();
         }
+    }
+    /// Configured duration in milliseconds.
+    pub fn duration(&self) -> u64 {
+        self.duration
+    }
+    /// Adjust a stopped timer in ten-second increments, bounded to 10s–99min.
+    pub fn adjust(&mut self, direction: i8) {
+        if !self.running() {
+            self.duration = step_duration(self.duration, direction);
+            self.reset();
+        }
+    }
+}
+
+/// Apply one bounded ten-second adjustment.
+pub fn step_duration(duration: u64, direction: i8) -> u64 {
+    (duration as i64 + i64::from(direction.signum()) * 10_000).clamp(10_000, 5_940_000) as u64
+}
+
+/// Hold-repeat state; callers cancel on release or leaving the button.
+#[derive(Default)]
+pub struct HoldRepeat {
+    /// Direction, press timestamp and next repeat deadline.
+    held: Option<(i8, u64, u64)>,
+}
+impl HoldRepeat {
+    /// Start a hold after applying the initial tap.
+    pub fn press(&mut self, direction: i8, now: u64) {
+        self.held = Some((direction, now, now.saturating_add(500)));
+    }
+    /// Current button direction, for cancelling when a finger leaves it.
+    pub fn direction(&self) -> Option<i8> {
+        self.held.map(|h| h.0)
+    }
+    /// Stop repeating immediately.
+    pub fn cancel(&mut self) {
+        self.held = None;
+    }
+    /// Produce at most one step per UI iteration, accelerating after two seconds.
+    pub fn update(&mut self, now: u64) -> Option<i8> {
+        let (direction, since, next) = self.held?;
+        if now < next {
+            return None;
+        }
+        let delay = if now.saturating_sub(since) >= 2_000 {
+            80
+        } else {
+            200
+        };
+        self.held = Some((direction, since, now.saturating_add(delay)));
+        Some(direction)
     }
 }
 
@@ -350,5 +405,36 @@ mod interval_tests {
         t.reset();
         assert_eq!(t.phase(), 0);
         assert_eq!(t.remaining(0), 30_000);
+    }
+}
+
+#[cfg(test)]
+mod adjustment_tests {
+    use super::*;
+    #[test]
+    fn custom_duration_survives_reset_and_running_cannot_change_it() {
+        let mut timer = Countdown::default();
+        timer.adjust(1);
+        assert_eq!(timer.duration(), 40_000);
+        timer.toggle(0);
+        timer.adjust(-1);
+        assert_eq!(timer.duration(), 40_000);
+        timer.reset();
+        assert_eq!(timer.remaining(0), 40_000);
+        assert_eq!(step_duration(10_000, -1), 10_000);
+        assert_eq!(step_duration(5_940_000, 1), 5_940_000);
+    }
+    #[test]
+    fn hold_delays_accelerates_and_cancels_without_catchup() {
+        let mut hold = HoldRepeat::default();
+        hold.press(1, 0);
+        assert_eq!(hold.update(499), None);
+        assert_eq!(hold.update(500), Some(1));
+        assert_eq!(hold.update(699), None);
+        assert_eq!(hold.update(2000), Some(1));
+        assert_eq!(hold.update(2079), None);
+        assert_eq!(hold.update(2080), Some(1));
+        hold.cancel();
+        assert_eq!(hold.update(9999), None);
     }
 }
