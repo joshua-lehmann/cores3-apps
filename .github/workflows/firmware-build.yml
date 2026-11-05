@@ -77,6 +77,8 @@ jobs:
 
       - name: Cache Cargo registry and build tree
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: esp32s3-firmware
 
       - name: Check formatting
         run: cargo fmt --check

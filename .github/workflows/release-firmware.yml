@@ -23,8 +23,17 @@ jobs:
           version: ${{ env.RUST_VERSION }}.0
           ldproxy: false
       - uses: Swatinem/rust-cache@v2
-      - name: Install espflash
-        run: cargo install cargo-espflash --locked
+        with:
+          shared-key: esp32s3-firmware
+      - name: Install pinned cargo-espflash binary
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/esp-rs/espflash/releases/download/v4.7.0/cargo-espflash-x86_64-unknown-linux-gnu.zip \
+            --output /tmp/cargo-espflash.zip
+          echo '0d0ca701660942aaed7452a10d59f484f462cdaf038112de520d5c2f1721220e  /tmp/cargo-espflash.zip' | sha256sum --check
+          python3 -m zipfile -e /tmp/cargo-espflash.zip /tmp/cargo-espflash-bin
+          install -m 755 /tmp/cargo-espflash-bin/cargo-espflash "$HOME/.cargo/bin/cargo-espflash"
+          cargo espflash --version
       - name: Build merged images at address 0x0
         run: |
           mkdir -p release-images
