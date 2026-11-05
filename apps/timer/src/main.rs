@@ -115,6 +115,13 @@ async fn main(_spawner: Spawner) -> ! {
                 }
                 redraw = true;
             } else if let TouchEvent::Pressed(p) = event
+                && (40..70).contains(&p.y)
+                && interval_mode
+                && !intervals.running()
+            {
+                edit_phase = (p.x.max(0) as usize / 107).min(2);
+                redraw = true;
+            } else if let TouchEvent::Pressed(p) = event
                 && (145..180).contains(&p.y)
             {
                 diagnostics = !diagnostics;
@@ -270,10 +277,10 @@ fn draw(
     if let Some((_, editing, first, second, _, rounds)) = interval {
         match editing {
             0 => {
-                let _ = write!(header, "EDIT 1: {}s  >", first / 1000);
+                let _ = write!(header, "WORK: {}s", first / 1000);
             }
             1 => {
-                let _ = write!(header, "EDIT 2: {}s  >", second / 1000);
+                let _ = write!(header, "BREAK: {}s", second / 1000);
             }
             _ => {
                 let _ = write!(header, "ROUNDS: {}  >", rounds);
@@ -291,9 +298,37 @@ fn draw(
         common::BODY_FONT,
         Rgb565::WHITE,
     );
+    if let Some((_, editing, work, rest, _, rounds)) = interval {
+        for (index, (name, value)) in [
+            ("WORK", work / 1000),
+            ("BREAK", rest / 1000),
+            ("ROUNDS", u64::from(rounds)),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let rect = area(index as i32 * 107, 40, 105, 28);
+            let _ = rect
+                .into_styled(PrimitiveStyle::with_fill(if editing == index {
+                    accent
+                } else {
+                    button
+                }))
+                .draw(canvas);
+            let mut label = arrayvec::ArrayString::<20>::new();
+            let _ = write!(
+                label,
+                "{} {}{}",
+                name,
+                value,
+                if index < 2 { "s" } else { "" }
+            );
+            common::centered_text(canvas, rect, &label, common::DENSE_FONT, Rgb565::WHITE);
+        }
+    }
     let seconds = remaining.div_ceil(1000);
     draw_time(canvas, seconds);
-    let _ = area(30, 135, 260, 8)
+    let _ = area(30, 139, 260, 4)
         .into_styled(PrimitiveStyle::with_fill(Rgb565::new(5, 12, 14)))
         .draw(canvas);
     let total = interval.map_or(
@@ -301,7 +336,7 @@ fn draw(
         |(phase, _, first, second, _, _)| if phase == 0 { first } else { second },
     );
     let width = (260 * remaining / total) as u32;
-    let _ = area(30, 135, width, 8)
+    let _ = area(30, 139, width, 4)
         .into_styled(PrimitiveStyle::with_fill(accent))
         .draw(canvas);
     let mut hint = arrayvec::ArrayString::<48>::new();
@@ -317,7 +352,7 @@ fn draw(
                 phase + 1
             );
         } else {
-            let _ = write!(hint, "< > OR TILT: ADJUST  |  TAP: LOG");
+            let _ = write!(hint, "TAP WORK/BREAK/ROUNDS - THEN < >");
         }
     } else if running {
         let _ = write!(hint, "PAUSE TO CHANGE MODE OR PRESET");
@@ -387,13 +422,13 @@ fn draw_time(canvas: &mut Canvas, seconds: u64) {
         let x = 76 + index as i32 * 40 + if index >= 2 { 8 } else { 0 };
         for (bit, &(dx, dy, w, h)) in segments.iter().enumerate() {
             if DIGITS[*digit] & (1 << bit) != 0 {
-                let _ = Rectangle::new(Point::new(x + dx, 55 + dy), Size::new(w, h))
+                let _ = Rectangle::new(Point::new(x + dx, 75 + dy), Size::new(w, h))
                     .into_styled(style)
                     .draw(canvas);
             }
         }
     }
-    for y in [72, 93] {
+    for y in [92, 113] {
         let _ = Rectangle::new(Point::new(157, y), Size::new(4, 4))
             .into_styled(style)
             .draw(canvas);
