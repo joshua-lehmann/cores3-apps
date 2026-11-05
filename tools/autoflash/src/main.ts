@@ -1,3 +1,5 @@
+import { keepScreenAwake } from "./wake-lock";
+import { createSerialBackend, USB_HELP } from "./serial-backend";
 import { discoverReleases, downloadFirmware, versionsForApp, type FirmwareRelease } from "./releases";
 import { ESPLoader, Transport } from "esptool-js";
 import { BacktraceCollector, decodeBacktrace, elfSha256Of, formatBacktrace } from "./backtrace";
@@ -230,6 +232,7 @@ class EventDrivenTransport extends Transport {
 }
 
 const deviceSearch = parseDeviceSearch(SERIAL_PORT_SEARCH);
+const serialBackend = createSerialBackend(navigator, (message) => appendSystem(message));
 /** The last progress line that esptool-js logs in `writeFlash`, for the last block. */
 const FINAL_FLASH_WRITE_LINE = /^Writing at 0x[0-9a-f]+\.\.\. \(100%\)$/i;
 /** The time between two attempts to connect to an offline device. */
@@ -260,6 +263,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
                 <span>Match <code>${SERIAL_PORT_SEARCH}</code> · ${MONITOR_BAUD_RATE.toLocaleString()} baud monitor</span>
               </div>
             </div>
+            <p class="usb-help">USB-C data cable required. On Android, enable USB host/OTG if needed and keep this page visible while flashing.</p>
             <div class="button-row device-actions">
               <button class="button primary" id="authorize-button" type="button">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-7-7h14"/></svg>
@@ -667,7 +671,7 @@ async function reconnectOfflineDevices(): Promise<void> {
     pendingConnectedPorts.clear();
 
     try {
-      for (const candidate of await navigator.serial.getPorts()) {
+      for (const candidate of await serialBackend!.getPorts()) {
         if (!candidates.includes(candidate)) candidates.push(candidate);
       }
     } catch {
@@ -1201,13 +1205,13 @@ async function attachPort(port: SerialPort, source: "Authorized" | "Found", acti
  * Without it, attach all authorized ports that match the device filter.
  */
 async function connectPorts(interactive: boolean): Promise<void> {
-  if (!("serial" in navigator)) throw new Error("Web Serial is not supported by this browser.");
+  if (!serialBackend) throw new Error("Neither Web Serial nor WebUSB is available in this browser.");
 
   if (interactive) {
     const filters = requestPortFilters(deviceSearch);
     const selected = filters
-      ? await navigator.serial.requestPort({ filters })
-      : await navigator.serial.requestPort();
+      ? await serialBackend!.requestPort({ filters })
+      : await serialBackend!.requestPort();
     removedPorts.delete(selected);
     await attachPort(selected, "Authorized", true);
     return;
@@ -1216,7 +1220,7 @@ async function connectPorts(interactive: boolean): Promise<void> {
   searchingForDevices = true;
   refreshDeviceSummary();
   try {
-    const authorized = (await navigator.serial.getPorts())
+    const authorized = (await serialBackend!.getPorts())
       .filter((candidate) => !removedPorts.has(candidate))
       .filter((candidate) => portMatchesSearch(candidate.getInfo(), deviceSearch));
     const results = await Promise.allSettled(authorized.map((candidate) => attachPort(candidate, "Found", false)));
@@ -1367,6 +1371,7 @@ async function pollFirmware(): Promise<void> {
 
 /** Request a flash. During a flash, the request waits until the current flash has ended. */
 function queueFlash(reason: "change" | "manual" | "remote"): void {
+  if (flashing && reason !== "change") return;
   queuedFlash = true;
   queuedFlashReason = reason;
   if (flashing) {
@@ -1385,6 +1390,7 @@ async function runFlashQueue(): Promise<void> {
   flashing = true;
   refreshDeviceSummary();
   let activeReason: "change" | "manual" | "remote" = queuedFlashReason;
+  const releaseWakeLock = keepScreenAwake((message) => appendSystem(message));
 
   try {
     while (queuedFlash) {
@@ -1412,6 +1418,7 @@ async function runFlashQueue(): Promise<void> {
       }
     }
   } finally {
+    releaseWakeLock();
     flashing = false;
     refreshDeviceSummary();
 
@@ -1642,14 +1649,15 @@ async function restoreFirmware(): Promise<void> {
 function showUnsupportedBrowser(): void {
   unsupportedBrowser = true;
   ui.filePicker.disabled = true;
-  appendSystem("Unsupported browser. Open this site in current Chrome or Edge on desktop in a secure context; Web Serial is required.", "error");
+  appendSystem("Unsupported browser. Open this site over HTTPS in desktop Chrome/Edge or Android Chrome; Web Serial or WebUSB is required.", "error");
   refreshDeviceSummary();
 }
 
 ui.authorizeButton.addEventListener("click", () => {
   void connectPorts(true).catch((error) => {
-    if (!(error instanceof DOMException && error.name === "NotFoundError")) {
+    if (serialBackend?.kind === "webusb" || !(error instanceof DOMException && error.name === "NotFoundError")) {
       appendSystem(`Connection failed: ${errorMessage(error)}`, "error");
+      if (serialBackend?.kind === "webusb") appendSystem(USB_HELP, "error");
       refreshDeviceSummary();
     }
   });
@@ -1718,6 +1726,7 @@ ui.releaseRefresh.addEventListener("click", () => {
 ui.releaseApp.addEventListener("change", updateReleaseVersions);
 ui.releaseVersion.addEventListener("change", refreshActionAvailability);
 ui.releaseFlash.addEventListener("click", () => {
+  if (flashing || releaseLoading) return;
   const release = releases.find((entry) => entry.version === ui.releaseVersion.value);
   const asset = release?.assets.find((entry) => entry.app === ui.releaseApp.value);
   if (!asset || !release) return;
@@ -1782,9 +1791,8 @@ document.addEventListener("visibilitychange", () => {
   });
 });
 
-if ("serial" in navigator) {
-  navigator.serial.addEventListener("connect", (event) => {
-    const connectedPort = event.target as SerialPort | null;
+if (serialBackend) {
+  serialBackend.on("connect", (connectedPort) => {
     if (!connectedPort || removedPorts.has(connectedPort)) return;
     if (!portMatchesSearch(connectedPort.getInfo(), deviceSearch)) return;
 
@@ -1804,8 +1812,7 @@ if ("serial" in navigator) {
     pendingConnectedPorts.add(connectedPort);
     scheduleReconnectSweep(RECONNECT_EVENT_DELAY_MS);
   });
-  navigator.serial.addEventListener("disconnect", (event) => {
-    const disconnectedPort = event.target as SerialPort | null;
+  serialBackend.on("disconnect", (disconnectedPort) => {
     if (!disconnectedPort) return;
     const session = devices.get(disconnectedPort);
     if (!session) return;
@@ -1822,11 +1829,13 @@ if ("serial" in navigator) {
 async function initialize(): Promise<void> {
   appendSystem(`Ready. Target is ${SERIAL_PORT_SEARCH}; firmware address is 0x${FLASH_ADDRESS.toString(16)}.`);
   if (import.meta.env.VITE_GITHUB_PAGES === "true") appendSystem("GitHub Pages does not provide backtrace decoding; use the local server to decode panic addresses.");
-  if (!("serial" in navigator) || !window.isSecureContext) {
+  if (!serialBackend || !window.isSecureContext) {
     searchingForDevices = false;
     showUnsupportedBrowser();
     return;
   }
+  appendSystem(`Connection backend: ${serialBackend.kind}.`);
+  if (serialBackend.kind === "webusb") appendSystem(USB_HELP);
   if (!window.showOpenFilePicker) {
     ui.filePicker.disabled = true;
     ui.fileMeta.textContent = "Local file watching is unavailable in this browser.";

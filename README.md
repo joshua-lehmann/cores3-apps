@@ -12,7 +12,7 @@ Experimental firmware, including `imu_color`, `light_meter`, `color_ping`, `pani
 
 ## Flash a release
 
-Open [Autoflash](https://joshua-lehmann.github.io/cores3-apps/) in desktop Chrome or Edge. Connect the CoreS3 over USB, authorize the device, load GitHub releases, select an application and version, and click **Download and flash release**. No local installation is required. Web Serial requires HTTPS or localhost and is not supported by Firefox, Safari, or mobile browsers for this workflow.
+Open [Autoflash](https://joshua-lehmann.github.io/cores3-apps/) in desktop Chrome/Edge or Android Chrome. Connect the CoreS3 over USB, authorize the device, load GitHub releases, select an application and version, and click **Download and flash release**. No local installation is required. Desktop uses Web Serial; Android Chrome uses WebUSB for compatible CDC serial devices. Both require HTTPS or localhost. Android USB-C flashing still needs physical-device validation; see the Autoflash guide. Firefox, Safari, and iOS are unsupported.
 
 Autoflash flashes merged images at `0x0`, monitors serial output, and supports multiple authorized devices. A new release never triggers a flash by itself. See the [Autoflash guide](tools/autoflash/README.md) for local file watching, troubleshooting, and panic decoding.
 

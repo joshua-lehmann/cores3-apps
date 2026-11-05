@@ -940,3 +940,12 @@ main {
   padding: 0.55rem;
 }
 #release-status { font-size: 0.85rem; }
+
+.usb-help { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+@media (max-width: 580px) {
+  #release-flash { width: 100%; min-height: 48px; white-space: normal; }
+  #firmware-card select { min-height: 48px; font-size: 16px; }
+  .text-button { min-height: 44px; }
+  .file-picker { white-space: normal; }
+  .file-picker-copy { min-width: 0; overflow-wrap: anywhere; }
+}
