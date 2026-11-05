@@ -1,7 +1,7 @@
 import { finishFlash, isDownloadMode, MANUAL_REBOOT } from "./flash-completion";
 import { keepScreenAwake } from "./wake-lock";
 import { createSerialBackend, USB_HELP } from "./serial-backend";
-import { discoverReleases, downloadFirmware, versionsForApp, type FirmwareRelease } from "./releases";
+import { discoverReleases, downloadFirmware, releaseLabel, versionsForApp, type FirmwareRelease } from "./releases";
 import { ESPLoader, Transport } from "esptool-js";
 import { BacktraceCollector, decodeBacktrace, elfSha256Of, formatBacktrace } from "./backtrace";
 import {
@@ -1722,7 +1722,7 @@ ui.watchToggle.addEventListener("change", () => {
 function updateReleaseVersions(): void {
   const app = ui.releaseApp.value;
   ui.releaseVersion.replaceChildren();
-  for (const version of versionsForApp(releases, app)) ui.releaseVersion.add(new Option(version, version));
+  for (const version of versionsForApp(releases, app)) ui.releaseVersion.add(new Option(releaseLabel(releases.find((release) => release.version === version)!), version));
   refreshActionAvailability();
 }
 

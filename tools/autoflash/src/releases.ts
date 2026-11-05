@@ -3,7 +3,7 @@ const API = "https://api.github.com/repos/joshua-lehmann/cores3-apps/releases";
 const MAX_BYTES = 16 * 1024 * 1024;
 
 export interface FirmwareAsset { app: string; name: string; url: string; size: number; digest?: string }
-export interface FirmwareRelease { version: string; assets: FirmwareAsset[] }
+export interface FirmwareRelease { version: string; publishedAt?: string; assets: FirmwareAsset[] }
 
 /** Accept only release assets belonging to this repository with the agreed filename. */
 export function parseReleases(value: unknown): FirmwareRelease[] {
@@ -19,26 +19,29 @@ export function parseReleases(value: unknown): FirmwareRelease[] {
         assets.push({ app: asset.name.slice(0, -4), name: asset.name, url: url.href, size: asset.size, ...(typeof asset.digest === "string" && /^sha256:[a-f0-9]{64}$/.test(asset.digest) ? { digest: asset.digest } : {}) });
       } catch { /* Ignore malformed assets. */ }
     }
-    return assets.length ? [{ version: item.tag_name, assets }] : [];
+    const publishedAt = typeof item.published_at === "string" && Number.isFinite(Date.parse(item.published_at)) ? item.published_at : undefined;
+    return assets.length ? [{ version: item.tag_name, ...(publishedAt ? { publishedAt } : {}), assets }] : [];
   });
 }
 
-/** Fetch all release pages, keeping the API's newest-first ordering. */
+/** Fetch only the five newest release entries; retain stable firmware releases. */
 export async function discoverReleases(fetcher: typeof fetch = fetch): Promise<FirmwareRelease[]> {
-  const releases: FirmwareRelease[] = [];
-  for (let page = 1; page <= 100; page++) {
-    const response = await fetcher(`${API}?per_page=100&page=${page}`, { headers: { Accept: "application/vnd.github+json" } });
-    if (!response.ok) throw new Error(`GitHub releases request failed (${response.status}).`);
-    const raw: unknown = await response.json();
-    if (!Array.isArray(raw)) throw new Error("GitHub returned an invalid release list.");
-    releases.push(...parseReleases(raw));
-    if (raw.length < 100) return releases.sort((a, b) => {
-      const left = a.version.slice(1).split(".").map(Number);
-      const right = b.version.slice(1).split(".").map(Number);
-      return right[0] - left[0] || right[1] - left[1] || right[2] - left[2];
-    });
-  }
-  throw new Error("Too many GitHub release pages.");
+  const response = await fetcher(`${API}?per_page=5&page=1`, { headers: { Accept: "application/vnd.github+json" } });
+  if (!response.ok) throw new Error(`GitHub releases request failed (${response.status}).`);
+  const raw: unknown = await response.json();
+  if (!Array.isArray(raw)) throw new Error("GitHub returned an invalid release list.");
+  return parseReleases(raw.slice(0, 5));
+}
+
+/** Release label in Swiss German, always using Swiss local time. */
+export function releaseLabel(release: FirmwareRelease): string {
+  if (!release.publishedAt || !Number.isFinite(Date.parse(release.publishedAt))) return release.version;
+  const date = new Intl.DateTimeFormat("de-CH", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    timeZone: "Europe/Zurich", timeZoneName: "short",
+  }).format(new Date(release.publishedAt));
+  return `${release.version} · ${date}`;
 }
 
 /** Versions containing a given application, in discovery order. */

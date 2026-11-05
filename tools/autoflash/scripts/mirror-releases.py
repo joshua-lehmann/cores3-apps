@@ -8,8 +8,8 @@ import re
 import subprocess
 
 repo = os.environ["GITHUB_REPOSITORY"]
-raw = subprocess.check_output(["gh", "api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"])
-releases = [release for page in json.loads(raw) for release in page]
+raw = subprocess.check_output(["gh", "api", f"repos/{repo}/releases?per_page=5&page=1"])
+releases = json.loads(raw)[:5]
 root = Path("dist/client/firmware")
 for release in releases:
     tag = release.get("tag_name", "")
