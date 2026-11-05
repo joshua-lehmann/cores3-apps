@@ -5,6 +5,7 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use embedded_hal_async::i2c::I2c;
 
+/// Latest percentage, or 255 when no valid reading is available.
 static PERCENT: AtomicU8 = AtomicU8::new(255);
 
 /// Latest fuel-gauge percentage; unavailable when absent or a read fails.
@@ -13,10 +14,12 @@ pub fn percent() -> Option<u8> {
     (value <= 100).then_some(value)
 }
 
+/// Start the shared PMIC fuel-gauge polling task on CPU1.
 pub(crate) fn spawn(spawner: &Spawner, bus: SystemI2cBus) {
     spawner.spawn(poll(bus).expect("battery task already spawned"));
 }
 
+/// Poll battery presence and state of charge at a low rate.
 #[embassy_executor::task]
 async fn poll(bus: SystemI2cBus) {
     loop {
