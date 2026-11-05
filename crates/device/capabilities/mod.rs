@@ -18,6 +18,7 @@
 
 pub mod audio;
 pub mod backlight;
+pub mod battery;
 pub mod camera;
 pub mod display;
 pub mod imu;

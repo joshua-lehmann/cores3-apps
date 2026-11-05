@@ -81,6 +81,7 @@ fn run(cpu1: Cpu1) {
         // interrupt. So the blocking driver is converted here, not on CPU0.
         let system_bus = i2c::into_async(cpu1.system_i2c);
 
+        crate::capabilities::battery::spawn(&spawner, system_bus);
         backlight::spawn(&spawner, system_bus, cpu1.backlight);
         imu::spawn(&spawner, system_bus, cpu1.imu);
         touch::spawn(&spawner, system_bus, cpu1.touch);

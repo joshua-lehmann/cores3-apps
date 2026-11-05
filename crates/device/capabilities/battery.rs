@@ -1,0 +1,39 @@
+//! Coarse AXP2101 fuel-gauge readings, refreshed without blocking the UI.
+use crate::board::i2c::SystemI2cBus;
+use core::sync::atomic::{AtomicU8, Ordering};
+use embassy_executor::Spawner;
+use embassy_time::{Duration, Timer};
+use embedded_hal_async::i2c::I2c;
+
+static PERCENT: AtomicU8 = AtomicU8::new(255);
+
+/// Latest fuel-gauge percentage; unavailable when absent or a read fails.
+pub fn percent() -> Option<u8> {
+    let value = PERCENT.load(Ordering::Relaxed);
+    (value <= 100).then_some(value)
+}
+
+pub(crate) fn spawn(spawner: &Spawner, bus: SystemI2cBus) {
+    spawner.spawn(poll(bus).expect("battery task already spawned"));
+}
+
+#[embassy_executor::task]
+async fn poll(bus: SystemI2cBus) {
+    loop {
+        let mut status = [0];
+        let mut level = [255];
+        let valid = {
+            let mut bus = bus.lock().await;
+            I2c::write_read(&mut *bus, 0x34, &[0x00], &mut status)
+                .await
+                .is_ok()
+                && status[0] & 8 != 0
+                && I2c::write_read(&mut *bus, 0x34, &[0xa4], &mut level)
+                    .await
+                    .is_ok()
+                && level[0] <= 100
+        };
+        PERCENT.store(if valid { level[0] } else { 255 }, Ordering::Relaxed);
+        Timer::after(Duration::from_secs(10)).await;
+    }
+}

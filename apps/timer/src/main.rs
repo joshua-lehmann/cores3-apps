@@ -53,6 +53,7 @@ async fn main(_spawner: Spawner) -> ! {
     let mut wave = SineWave::new(783.99);
     let mut redraw = true;
     let mut last_second = u64::MAX;
+    let mut last_battery = None;
     let mut diagnostics = false;
     let mut last_diagnostic = 0;
     loop {
@@ -171,6 +172,11 @@ async fn main(_spawner: Spawner) -> ! {
         let second = remaining.div_ceil(1000);
         if second != last_second {
             last_second = second;
+            redraw = true;
+        }
+        let battery = cores3_device::capabilities::battery::percent();
+        if battery != last_battery {
+            last_battery = battery;
             redraw = true;
         }
         if redraw {
@@ -367,6 +373,24 @@ fn draw(
         &hint,
         common::DENSE_FONT,
         Rgb565::WHITE,
+    );
+    let mut battery_label = arrayvec::ArrayString::<12>::new();
+    let level = cores3_device::capabilities::battery::percent();
+    if let Some(percent) = level {
+        let _ = write!(battery_label, "BAT {}%", (u16::from(percent) + 5) / 10 * 10);
+    } else {
+        let _ = write!(battery_label, "BAT --");
+    }
+    common::centered_text(
+        canvas,
+        area(246, 169, 74, 12),
+        &battery_label,
+        common::DENSE_FONT,
+        if level.is_some_and(|p| p <= 20) {
+            Rgb565::RED
+        } else {
+            accent
+        },
     );
     common::centered_text(
         canvas,

@@ -18,6 +18,8 @@ Autoflash flashes merged images at `0x0`, monitors serial output, and supports m
 
 ## Timer controls
 
+The lower-right battery indicator shows the AXP2101 fuel-gauge estimate rounded to 10% steps. It refreshes every ten seconds and turns red at 20% or below. `BAT --` means the battery is absent or its reading is unavailable; the estimate is not a precision measurement.
+
 The timer starts in single-countdown mode. Tap the top-left **MODE** button to switch between **SINGLE** and **LOOP** while stopped. In loop mode, tap the top-right **EDIT** button to cycle between editing phase 1, phase 2, and ROUNDS. Use the bottom arrows or tilt to adjust the selection. The defaults are 30 seconds, 20 seconds, and five rounds. Each round contains both phases; the timer stops and displays COMPLETE after the final phase. The phase durations can be 20 or 30 seconds, 1, 2, 5, 10, or 25 minutes. Changing a phase or round count resets the loop to phase 1. Choose 1–99 rounds; the count is retained when you reset the timer or switch modes, and returns to five after power-off or reboot.
 
 For tilt selection, hold the screen facing up, lower the **right edge** to advance, or the **left edge** to go back. Return the device to level between tilts and hold each tilt briefly. In single mode, the 25-minute Pomodoro preset is reached by stepping backward once from the initial 30-second preset, or forward five times. In loop mode, tilting adjusts the selected phase duration or round count. Tilts cannot change the selection while a timer is running.
