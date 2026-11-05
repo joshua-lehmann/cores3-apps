@@ -1,10 +1,6 @@
 name: Deploy Autoflash to GitHub Pages
 
 on:
-  push:
-    branches: [main]
-  release:
-    types: [published, edited, deleted]
   workflow_run:
     workflows: [Publish firmware, CI]
     types: [completed]
@@ -21,7 +17,16 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # Deploy once after trusted main CI or a standalone tagged firmware release.
+    # workflow_run executes on the default branch, satisfying Pages protection rules.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       ((github.event.workflow_run.name == 'CI' &&
+         github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.head_branch == 'main') ||
+        github.event.workflow_run.name == 'Publish firmware'))
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -52,6 +57,9 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: tools/autoflash/dist/client
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}

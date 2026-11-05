@@ -74,3 +74,7 @@ References: [esptool-js](https://github.com/espressif/esptool-js), [API docs](ht
 Autoflash waits for the complete esptool-js write transaction, then releases DTR, asserts RTS, and uses the loader's hard-reset operation before closing the transport. It waits briefly before reopening the serial monitor. A printed 100% line alone is not treated as completion.
 
 If reset/reconnection fails, the ROM reports DOWNLOAD mode, or no startup output arrives during the short observation window, the page displays: **Firmware flashed successfully. Disconnect and reconnect USB-C to start the new firmware.** A silent application may also produce this conservative notice. A failure during the write itself remains a flash error. On the Pixel, verify both that the new app starts without reconnecting and that serial monitoring resumes; this reset change still needs physical-device validation.
+
+### Pages deployment triggers
+
+Pages deploys after successful `main` push CI, or after a successful standalone firmware publication. It does not deploy directly from tag/release events or pull-request CI. This keeps deployment on the protected `main` context and avoids duplicate deployments for one change. Manual refresh is available through **Deploy Autoflash to GitHub Pages → Run workflow → main**, including after editing release assets. Each attempt uses a unique Pages artifact name so retries cannot pick up an older artifact from the same run. Deployment runs are serialized and are not cancelled while GitHub is publishing them.
