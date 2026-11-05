@@ -68,3 +68,9 @@ For follow-up, download the **Autoflash** and device logs. Include Android and C
 The adapter pins Google's archived [`web-serial-polyfill` 1.0.15](https://github.com/google/web-serial-polyfill) and retains `esptool-js` 0.6.1. Its CDC streams and control methods feed the existing `EventDrivenTransport` and `ESPLoader`; the adapter adds connection events and stable port wrappers. It does not replace `navigator.serial` globally. USB-UART bridges needing vendor-specific protocols are outside this CDC path. The polyfill's Apache-2.0 license is bundled under `THIRD_PARTY_LICENSES/`.
 
 References: [esptool-js](https://github.com/espressif/esptool-js), [API docs](https://espressif.github.io/esptool-js/docs/), [WebUSB](https://developer.mozilla.org/en-US/docs/Web/API/WebUSB_API), [Web Serial](https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API), [Chrome USB permissions](https://support.google.com/chrome/answer/12576972), and [Espressif USB Serial/JTAG](https://docs.espressif.com/projects/esp-idf/en/release-v5.3/esp32s3/api-guides/usb-serial-jtag-console.html).
+
+### After flashing: reboot and serial monitor
+
+Autoflash waits for the complete esptool-js write transaction, then releases DTR, asserts RTS, and uses the loader's hard-reset operation before closing the transport. It waits briefly before reopening the serial monitor. A printed 100% line alone is not treated as completion.
+
+If reset/reconnection fails, the ROM reports DOWNLOAD mode, or no startup output arrives during the short observation window, the page displays: **Firmware flashed successfully. Disconnect and reconnect USB-C to start the new firmware.** A silent application may also produce this conservative notice. A failure during the write itself remains a flash error. On the Pixel, verify both that the new app starts without reconnecting and that serial monitoring resumes; this reset change still needs physical-device validation.

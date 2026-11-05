@@ -1,3 +1,4 @@
+import { finishFlash, isDownloadMode, MANUAL_REBOOT } from "./flash-completion";
 import { keepScreenAwake } from "./wake-lock";
 import { createSerialBackend, USB_HELP } from "./serial-backend";
 import { discoverReleases, downloadFirmware, versionsForApp, type FirmwareRelease } from "./releases";
@@ -64,6 +65,12 @@ type DeviceSession = {
   log: string;
   /** Whether the serial log was opened before. Then "Clear on reconnect" applies. */
   monitorOpened: boolean;
+  /** A completed flash that still requires a physical reboot. */
+  rebootNotice?: string;
+  /** Bounded serial suffix used to detect ROM download mode after flashing. */
+  bootLog?: string;
+  /** Ends the short post-flash startup observation window. */
+  bootTimer?: number;
   /** When the device disconnected (`Date.now()`). A new port uses the tab that disconnected last. */
   disconnectedAt?: number;
   /** The reader of the serial log stream, while the log is open. */
@@ -233,8 +240,7 @@ class EventDrivenTransport extends Transport {
 
 const deviceSearch = parseDeviceSearch(SERIAL_PORT_SEARCH);
 const serialBackend = createSerialBackend(navigator, (message) => appendSystem(message));
-/** The last progress line that esptool-js logs in `writeFlash`, for the last block. */
-const FINAL_FLASH_WRITE_LINE = /^Writing at 0x[0-9a-f]+\.\.\. \(100%\)$/i;
+
 /** The time between two attempts to connect to an offline device. */
 const RECONNECT_RETRY_DELAY_MS = 250;
 /** The delay of a connect attempt after a USB connect event: none. */
@@ -533,12 +539,29 @@ function appendOutput(session: DeviceSession, value: string): void {
   if (!applicationTabActive && activeDevice === session) renderTerminalOutput();
 }
 
+/** Report startup failure without classifying a completed write as a failed flash. */
+function showManualReboot(session: DeviceSession): void {
+  session.rebootNotice = MANUAL_REBOOT;
+  appendSystem(MANUAL_REBOOT, "info", session);
+  session.status = MANUAL_REBOOT;
+  refreshDeviceSummary();
+  updateProgress(100, MANUAL_REBOOT);
+  ui.releaseStatus.textContent = MANUAL_REBOOT;
+}
+
 /**
  * Handle serial output from the device. A panic backtrace in it is decoded
  * when it ends: at the next line that is not an address, or after
  * `BACKTRACE_QUIET_MS` without output.
  */
 function receiveSerialOutput(session: DeviceSession, value: string): void {
+  if (session.bootLog !== undefined) {
+    session.bootLog = (session.bootLog + value).slice(-512);
+    if (isDownloadMode(session.bootLog)) {
+      showManualReboot(session);
+      session.bootLog = undefined;
+    }
+  }
   if (import.meta.env.VITE_GITHUB_PAGES === "true") { appendOutput(session, value); return; }
   const { display, completed } = session.backtraces.push(value);
   if (display) appendOutput(session, display);
@@ -1398,7 +1421,7 @@ async function runFlashQueue(): Promise<void> {
       queuedFlash = false;
       try {
         await flashLatestFirmware(activeReason);
-        if (activeReason === "remote") ui.releaseStatus.textContent = "Release flash complete.";
+
       } catch (error) {
         if (activeReason === "remote") ui.releaseStatus.textContent = `Release flash failed: ${errorMessage(error)}`;
         appendSystem(`Flash failed: ${errorMessage(error)}`, "error");
@@ -1518,11 +1541,14 @@ async function flashLatestFirmware(reason: "change" | "manual" | "remote"): Prom
 
   if (reason !== "remote") setFileState(ui.watchToggle.checked ? "watching" : "paused");
   updateProgress(undefined, reason === "remote" ? "Release flash complete" : "Flash complete — watching for the next change");
-  appendSystem(`${targets.length === 1 ? "Device" : "All devices"} reset; live serial output resumed.`, "success");
+  const needsReboot = targets.some((session) => session.rebootNotice);
+  if (needsReboot) updateProgress(100, MANUAL_REBOOT);
+  if (reason === "remote") ui.releaseStatus.textContent = needsReboot ? MANUAL_REBOOT : "Release flash complete; reboot requested.";
+  appendSystem("Firmware flashing completed; check each device's reboot status.", "success");
 }
 
 /**
- * Flash one device with esptool-js, then reopen its serial log and reset it.
+ * Flash one device with esptool-js, reset it while connected, then reopen its serial log.
  * `reportProgress` receives the progress in percent and a status text.
  */
 async function flashDevice(
@@ -1538,19 +1564,10 @@ async function flashDevice(
   const activePort = session.port;
   const transport = new EventDrivenTransport(activePort, false);
   let transportOpen = false;
-  let finalWriteLineSeen = false;
-  let resolveFinalWriteLine!: () => void;
-  const finalWriteLine = new Promise<void>((resolve) => {
-    resolveFinalWriteLine = resolve;
-  });
-
-  const handleFlashLogLine = (data: string): void => {
-    appendToolOutput(session, `${data}\n`);
-    if (!finalWriteLineSeen && FINAL_FLASH_WRITE_LINE.test(data.trim())) {
-      finalWriteLineSeen = true;
-      resolveFinalWriteLine();
-    }
-  };
+  let completionOwnsTransport = false;
+  window.clearTimeout(session.bootTimer);
+  session.rebootNotice = undefined;
+  session.bootLog = undefined;
 
   const loader = new ESPLoader({
     transport,
@@ -1559,7 +1576,7 @@ async function flashDevice(
     terminal: {
       clean: () => undefined,
       write: (data: string) => appendToolOutput(session, data),
-      writeLine: handleFlashLogLine,
+      writeLine: (data: string) => appendToolOutput(session, `${data}\n`),
     },
   });
 
@@ -1569,7 +1586,7 @@ async function flashDevice(
     appendSystem(`Bootloader connected: ${chip}.`, "success", session);
     setDeviceState(session, "flashing", `Writing flash at 0x${FLASH_ADDRESS.toString(16)}`);
 
-    const writeTask = loader.writeFlash({
+    const write = () => loader.writeFlash({
       fileArray: [{ data: image, address: FLASH_ADDRESS }],
       flashMode: "keep",
       flashFreq: "keep",
@@ -1577,33 +1594,32 @@ async function flashDevice(
       eraseAll: false,
       compress: true,
       reportProgress: (_fileIndex, written, total) => {
-        const percent = total === 0 ? 0 : (written / total) * 100;
+        const percent = total === 0 ? 0 : Math.min(99, (written / total) * 100);
         reportProgress(percent, `${deviceLabel(session)} · writing ${formatBytes(written)} of ${formatBytes(total)}`);
       },
     });
 
-    const completion = await Promise.race([
-      finalWriteLine.then(() => "final-write-line" as const),
-      writeTask.then(() => "write-finished" as const),
-    ]);
-
-    if (completion === "final-write-line") {
-      // This is wanted: the page stops waiting for `writeFlash` as soon as
-      // esptool-js logs its "Writing at 0x... (100%)" line. esptool-js 0.6.1
-      // logs this line before it sends the last block. So the last block, its
-      // reply and the end-of-flash command can still be in progress.
-      // `transport.disconnect()` below closes the port, which ends this work on
-      // the page side. `writeTask` then rejects; the `catch` prevents an
-      // unhandled promise rejection.
-      void writeTask.catch(() => undefined);
-      reportProgress(100, `${deviceLabel(session)} · 100% reached — restoring serial monitor`);
-      appendSystem("100% write line received. Reopening the serial monitor now…", "success", session);
-    } else {
-      reportProgress(100, `${deviceLabel(session)} · firmware written — restoring serial monitor`);
-      appendSystem("Firmware written. Reopening the serial monitor…", "success", session);
-    }
+    completionOwnsTransport = true;
+    const resetAccepted = await finishFlash(write, async () => {
+      appendSystem("Firmware written. Resetting before reopening the serial monitor…", "success", session);
+      reportProgress(100, `${deviceLabel(session)} · firmware written; restarting`);
+      // Release GPIO0/DTR before pulsing reset. HardReset in 0.6.1 releases RTS
+      // but does not assert it first, so supply the assert here.
+      await transport.setDTR(false);
+      await transport.setRTS(true);
+      await loader.after("hard_reset");
+    }, () => transport.disconnect(), async () => {
+      session.bootLog = "";
+      await startMonitor(session, true);
+      if (!session.monitorLoop) throw new Error("Serial monitor has not reconnected.");
+      session.bootTimer = window.setTimeout(() => {
+        if (session.bootLog !== undefined && !session.bootLog.trim()) showManualReboot(session);
+        session.bootLog = undefined;
+      }, 5_000);
+    }, sleep);
+    if (!resetAccepted) session.rebootNotice = MANUAL_REBOOT;
   } finally {
-    if (transportOpen || activePort.readable) {
+    if (!completionOwnsTransport && (transportOpen || activePort.readable)) {
       try {
         await transport.disconnect();
       } catch {
@@ -1612,11 +1628,11 @@ async function flashDevice(
     }
   }
 
-  await startMonitor(session, true);
-  await resetDevice(session, false);
-  reportProgress(100, `${deviceLabel(session)} · flash complete — monitor live`);
-  setDeviceState(session, "connected", "Flash complete · monitor live");
-  appendSystem("Device reset; live serial output resumed.", "success", session);
+  const message = session.rebootNotice ?? "Firmware flashed; reboot requested, serial monitor connected.";
+  reportProgress(100, message);
+  session.status = message;
+  refreshDeviceSummary();
+  appendSystem(message, "success", session);
 }
 
 /**
