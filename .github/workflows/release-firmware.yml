@@ -4,16 +4,37 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      automatic:
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
   firmware:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: inputs.automatic || startsWith(github.ref, 'refs/tags/v')
+    concurrency:
+      group: publish-firmware
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Choose release version
+        env:
+          AUTOMATIC: ${{ inputs.automatic }}
+          MANUAL_TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$AUTOMATIC" = true ]; then
+            tag="$(python3 scripts/next_release.py)"
+          else
+            tag="$MANUAL_TAG"
+          fi
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
       - name: Read Rust version
         run: echo "RUST_VERSION=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_ENV"
       - uses: esp-rs/xtensa-toolchain@v1.7
@@ -44,10 +65,9 @@ jobs:
       - name: Publish assets
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release-images/*.bin --clobber
           else
-            gh release create "$RELEASE_TAG" release-images/*.bin --generate-notes
+            gh release create "$RELEASE_TAG" release-images/*.bin --target "$GITHUB_SHA" --generate-notes
           fi

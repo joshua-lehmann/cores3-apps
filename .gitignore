@@ -3,3 +3,5 @@
 firmware.bin
 .claude/worktrees/
 node_modules/
+
+**/__pycache__/

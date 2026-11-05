@@ -6,7 +6,7 @@ on:
   release:
     types: [published, edited, deleted]
   workflow_run:
-    workflows: [Publish firmware]
+    workflows: [Publish firmware, CI]
     types: [completed]
   workflow_dispatch:
 

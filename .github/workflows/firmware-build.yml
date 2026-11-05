@@ -10,13 +10,36 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  firmware-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check pushed firmware changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          changed=false
+          if [ "$EVENT_NAME" = push ]; then
+            changed="$(python3 scripts/next_release.py --changed "$BEFORE" "$AFTER")"
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+      - name: Test release version selection
+        run: python3 -m unittest discover -s scripts -p test_next_release.py
+
   host-tests:
     name: Host tests
     runs-on: ubuntu-latest
@@ -88,3 +111,12 @@ jobs:
 
       - name: Build every application binary
         run: cargo build --locked --release
+
+  publish-firmware:
+    needs: [firmware-changes, host-tests, autoflash, firmware]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.firmware-changes.outputs.changed == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-firmware.yml
+    with:
+      automatic: true
