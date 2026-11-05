@@ -27,6 +27,7 @@
 #![warn(clippy::missing_docs_in_private_items)]
 
 pub mod audio;
+pub mod battery;
 pub mod imu;
 pub mod light;
 pub mod lines;

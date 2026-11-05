@@ -17,7 +17,7 @@ use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
+    primitives::{Line, PrimitiveStyle, Rectangle},
 };
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -103,17 +103,14 @@ async fn main(_spawner: Spawner) -> ! {
         while let Some(event) = touch.next_event() {
             if let TouchEvent::Pressed(p) = event
                 && p.y < 40
+                && p.x < 110
                 && !timer.running()
                 && !intervals.running()
             {
-                if p.x < 110 {
-                    interval_mode = !interval_mode;
-                    timer.reset();
-                    intervals.reset();
-                    tilt.clear();
-                } else if interval_mode {
-                    edit_phase = (edit_phase + 1) % 3;
-                }
+                interval_mode = !interval_mode;
+                timer.reset();
+                intervals.reset();
+                tilt.clear();
                 redraw = true;
             } else if let TouchEvent::Pressed(p) = event
                 && (40..70).contains(&p.y)
@@ -174,7 +171,7 @@ async fn main(_spawner: Spawner) -> ! {
             last_second = second;
             redraw = true;
         }
-        let battery = cores3_device::capabilities::battery::percent();
+        let battery = cores3_device::capabilities::battery::reading();
         if battery != last_battery {
             last_battery = battery;
             redraw = true;
@@ -263,47 +260,29 @@ fn draw(
     let area = |x, y, w, h| Rectangle::new(Point::new(x, y), Size::new(w, h));
     use core::fmt::Write;
     let button = Rgb565::new(5, 13, 16);
-    for rect in [area(8, 5, 100, 34), area(116, 5, 196, 34)] {
-        let _ = rect
-            .into_styled(PrimitiveStyle::with_fill(button))
-            .draw(canvas);
-    }
+    let _ = area(8, 5, 100, 30)
+        .into_styled(PrimitiveStyle::with_fill(button))
+        .draw(canvas);
     common::centered_text(
         canvas,
-        area(8, 5, 100, 34),
+        area(8, 5, 100, 30),
         if interval.is_some() {
-            "MODE: LOOP"
+            "INTERVALS"
         } else {
-            "MODE: SINGLE"
+            "SINGLE"
         },
         common::DENSE_FONT,
         accent,
     );
-    let mut header = arrayvec::ArrayString::<32>::new();
-    if let Some((_, editing, first, second, _, rounds)) = interval {
-        match editing {
-            0 => {
-                let _ = write!(header, "WORK: {}s", first / 1000);
-            }
-            1 => {
-                let _ = write!(header, "BREAK: {}s", second / 1000);
-            }
-            _ => {
-                let _ = write!(header, "ROUNDS: {}  >", rounds);
-            }
-        }
-    } else if finished {
-        let _ = write!(header, "COMPLETE");
-    } else {
-        let _ = write!(header, "{}", LABELS[preset]);
+    if interval.is_none() {
+        common::centered_text(
+            canvas,
+            area(8, 40, 304, 28),
+            LABELS[preset],
+            common::BODY_FONT,
+            Rgb565::WHITE,
+        );
     }
-    common::centered_text(
-        canvas,
-        area(116, 5, 196, 34),
-        &header,
-        common::BODY_FONT,
-        Rgb565::WHITE,
-    );
     if let Some((_, editing, work, rest, _, rounds)) = interval {
         for (index, (name, value)) in [
             ("WORK", work / 1000),
@@ -347,25 +326,25 @@ fn draw(
         .draw(canvas);
     let mut hint = arrayvec::ArrayString::<48>::new();
     if finished {
-        let _ = write!(hint, "COMPLETE - RESET OR START AGAIN");
+        let _ = write!(hint, "COMPLETE");
     } else if let Some((phase, _, _, _, round, rounds)) = interval {
         if running {
             let _ = write!(
                 hint,
-                "ROUND {}/{} P{} - PAUSE TO EDIT",
+                "ROUND {}/{} - {}",
                 round,
                 rounds,
-                phase + 1
+                if phase == 0 { "WORK" } else { "BREAK" }
             );
         } else {
-            let _ = write!(hint, "TAP WORK/BREAK/ROUNDS - THEN < >");
+            let _ = write!(hint, "TAP A SETTING, ADJUST WITH < >");
         }
     } else if running {
-        let _ = write!(hint, "PAUSE TO CHANGE MODE OR PRESET");
+        let _ = write!(hint, "RUNNING");
     } else if diagnostics {
         let _ = write!(hint, "IMU LOG ON - TAP TO STOP");
     } else {
-        let _ = write!(hint, "TILT LEFT < PRESET > RIGHT  | TAP: LOG");
+        let _ = write!(hint, "TILT OR TAP < > TO CHOOSE");
     }
     common::centered_text(
         canvas,
@@ -375,23 +354,60 @@ fn draw(
         Rgb565::WHITE,
     );
     let mut battery_label = arrayvec::ArrayString::<12>::new();
-    let level = cores3_device::capabilities::battery::percent();
-    if let Some(percent) = level {
-        let _ = write!(battery_label, "BAT {}%", (u16::from(percent) + 5) / 10 * 10);
+    let battery = cores3_device::capabilities::battery::reading();
+    let color = if battery.is_some_and(|b| b.charging) {
+        accent
+    } else if battery.is_some_and(|b| b.percent <= 20) {
+        Rgb565::RED
     } else {
-        let _ = write!(battery_label, "BAT --");
+        Rgb565::WHITE
+    };
+    if let Some(battery) = battery {
+        let _ = write!(
+            battery_label,
+            "{}%",
+            (u16::from(battery.percent) + 5) / 10 * 10
+        );
+    } else {
+        let _ = write!(battery_label, "--");
     }
     common::centered_text(
         canvas,
-        area(246, 169, 74, 12),
+        area(236, 9, 44, 20),
         &battery_label,
         common::DENSE_FONT,
-        if level.is_some_and(|p| p <= 20) {
-            Rgb565::RED
-        } else {
-            accent
-        },
+        color,
     );
+    let _ = area(283, 12, 25, 14)
+        .into_styled(PrimitiveStyle::with_stroke(color, 1))
+        .draw(canvas);
+    let _ = area(308, 16, 3, 6)
+        .into_styled(PrimitiveStyle::with_fill(color))
+        .draw(canvas);
+    if let Some(battery) = battery {
+        let _ = area(285, 14, u32::from(battery.percent) * 21 / 100, 10)
+            .into_styled(PrimitiveStyle::with_fill(color))
+            .draw(canvas);
+        if battery.charging {
+            for (a, b) in [
+                ((228, 10), (222, 19)),
+                ((222, 19), (229, 19)),
+                ((229, 19), (223, 28)),
+            ] {
+                let _ = Line::new(Point::new(a.0, a.1), Point::new(b.0, b.1))
+                    .into_styled(PrimitiveStyle::with_stroke(accent, 2))
+                    .draw(canvas);
+            }
+        }
+    }
+    for (rect, fill) in [
+        (area(82, 184, 76, 50), accent),
+        (area(164, 184, 72, 50), button),
+    ] {
+        let _ = rect
+            .into_styled(PrimitiveStyle::with_fill(fill))
+            .draw(canvas);
+    }
     common::centered_text(
         canvas,
         area(0, 180, 80, 60),
